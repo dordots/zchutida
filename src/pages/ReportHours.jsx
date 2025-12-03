@@ -1,25 +1,78 @@
-import React, { useState, useEffect } from 'react';
-import { Session, Mentee } from '@/api/entities';
+import React from 'react';
+import { Session, Mentee, Mentor } from '@/api/entities';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { createPageUrl } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Clock, CheckCircle2, XCircle, Loader2, Calendar, Users, TrendingUp } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, Loader2, Calendar, Users, TrendingUp, AlertTriangle, Clock as ClockIcon } from 'lucide-react';
 import moment from 'moment';
 
 export default function ReportHours() {
-  const [mentorProfile, setMentorProfile] = useState(null);
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      if (parsed.mentorProfile) {
-        setMentorProfile(parsed.mentorProfile);
-      } else if (parsed.type === 'mentor') {
-        setMentorProfile(parsed.profile);
-      }
-    }
-  }, []);
+  // Get id_number from localStorage
+  const idNumber = localStorage.getItem('zchut_user_id');
+
+  // Load mentor profile from database
+  const { data: mentorProfile } = useQuery({
+    queryKey: ['mentorProfileForReportHours', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentors = await Mentor.filter({ id_number: idNumber });
+      return mentors.length > 0 ? mentors[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  const isApproved = mentorProfile?.admin_approved === true;
+
+  if (!mentorProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
+        <div className="text-slate-600">טוען...</div>
+      </div>
+    );
+  }
+
+  if (!isApproved) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8">
+            <Alert className="mb-6 bg-amber-50 border-amber-200">
+              <ClockIcon className="h-5 w-5 text-amber-600" />
+              <AlertDescription className="text-amber-800">
+                <strong>הבקשה שלך ממתינה לאישור מנהל המערכת</strong>
+                <br />
+                <span className="text-sm">אין לך הרשאה לגשת לעמוד זה עד שהמנהל יאשר את הפרופיל שלך.</span>
+              </AlertDescription>
+            </Alert>
+            {mentorProfile.admin_rejection_reason && (
+              <Alert className="mb-6 bg-red-50 border-red-200">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  <strong>הבקשה שלך נדחתה על ידי המנהל:</strong> {mentorProfile.admin_rejection_reason}
+                  <br />
+                  <span className="text-sm">ניתן לעדכן את הפרטים ולשלוח שוב לאישור.</span>
+                </AlertDescription>
+              </Alert>
+            )}
+            <Button 
+              onClick={() => navigate(createPageUrl('MentorProfile'))}
+              className="w-full bg-emerald-600 hover:bg-emerald-700"
+            >
+              לפרופיל שלי
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Get sessions for this mentor
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({

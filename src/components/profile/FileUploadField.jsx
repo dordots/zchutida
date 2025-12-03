@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Upload, FileText, CheckCircle2, Loader2 } from 'lucide-react';
+import { openFileUrl } from '@/utils';
 
 export default function FileUploadField({ label, required, fileUrl, onUpload, description }) {
   const [uploading, setUploading] = useState(false);
@@ -60,10 +61,13 @@ export default function FileUploadField({ label, required, fileUrl, onUpload, de
         {fileUrl && (
           <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg">
             <CheckCircle2 className="w-4 h-4" />
-            <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+            <button 
+              onClick={() => openFileUrl(fileUrl)}
+              className="hover:underline flex items-center gap-1 cursor-pointer"
+            >
               <FileText className="w-4 h-4" />
               הקובץ הועלה
-            </a>
+            </button>
           </div>
         )}
       </div>

@@ -34,6 +34,7 @@ export default function MentorProfile() {
   const [user, setUser] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [showUpdateMessage, setShowUpdateMessage] = useState(false);
   const [formData, setFormData] = useState({
     full_name: '',
     id_number: '',
@@ -52,43 +53,34 @@ export default function MentorProfile() {
 
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    // Load user from localStorage instead of base44 auth
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      const profile = parsed.mentorProfile || parsed.profile;
-      if (profile) {
-        // Create user object from profile
-        const currentUser = {
-          id: profile.id,
-          email: profile.email || '',
-          ...profile
-        };
-        setUser(currentUser);
-      }
-      
-      // Check approval status
-      if (parsed.mentorProfile && !parsed.mentorApproved) {
-        setPendingApproval(true);
-        if (parsed.mentorProfile.admin_rejection_reason) {
-          setRejectionReason(parsed.mentorProfile.admin_rejection_reason);
+  // Get id_number from localStorage - this is the only thing we store
+  const getIdNumber = () => {
+    return localStorage.getItem('zchut_user_id');
+  };
+
+  // Always load from database
+  const { data: mentorProfile } = useQuery({
+    queryKey: ['mentorProfile'],
+    queryFn: async () => {
+      const idNumber = getIdNumber();
+      if (idNumber) {
+        const profiles = await Mentor.filter({ id_number: idNumber });
+        if (profiles.length > 0) {
+          const profile = profiles[0];
+          // Set user from database
+          setUser({
+            id: profile.id,
+            email: profile.email || '',
+            ...profile
+          });
+          return profile;
         }
       }
-    }
-  }, []);
-
-  const { data: mentorProfile } = useQuery({
-    queryKey: ['mentorProfile', user?.id],
-    queryFn: async () => {
-      if (user.email) {
-        const profiles = await Mentor.filter({ email: user.email });
-        if (profiles.length > 0) return profiles[0];
-      }
       return null;
-      return profiles[0] || null;
     },
-    enabled: !!user
+    enabled: !!getIdNumber(),
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
   });
 
   useEffect(() => {
@@ -108,6 +100,19 @@ export default function MentorProfile() {
         experience_years: mentorProfile.experience_years || '',
         available_slots: mentorProfile.available_slots || []
       });
+      
+      // Hide update message if profile is approved
+      if (mentorProfile.admin_approved) {
+        setShowUpdateMessage(false);
+      }
+      
+      // Update rejection reason if exists
+      if (mentorProfile.admin_rejection_reason) {
+        setRejectionReason(mentorProfile.admin_rejection_reason);
+        setPendingApproval(false);
+      } else if (!mentorProfile.admin_approved && mentorProfile.status === 'pending_approval') {
+        setPendingApproval(true);
+      }
     }
   }, [mentorProfile]);
 
@@ -161,28 +166,42 @@ export default function MentorProfile() {
       formData.commitment_letter_url
     );
 
-    await saveMutation.mutateAsync({
+    // Check if ANY document changed (even just one)
+    const studyConfirmationChanged = mentorProfile && 
+      formData.study_confirmation_url !== mentorProfile.study_confirmation_url;
+    const employmentProcedureChanged = mentorProfile && 
+      formData.employment_procedure_url !== mentorProfile.employment_procedure_url;
+    const form101Changed = mentorProfile && 
+      formData.form_101_url !== mentorProfile.form_101_url;
+    const commitmentLetterChanged = mentorProfile && 
+      formData.commitment_letter_url !== mentorProfile.commitment_letter_url;
+    
+    const anyDocumentChanged = studyConfirmationChanged || employmentProcedureChanged || 
+      form101Changed || commitmentLetterChanged;
+
+    // Prepare update data
+    const updateData = {
       ...formData,
       hourly_rate: parseFloat(formData.hourly_rate) || 0,
       experience_years: parseInt(formData.experience_years) || 0,
-      profile_complete: profileComplete,
-      status: 'pending_approval',
-      admin_rejection_reason: ''
-    });
-    
-    // Update local state
-    setRejectionReason('');
-    setPendingApproval(true);
-    
-    // Update localStorage
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      if (parsed.mentorProfile) {
-        parsed.mentorProfile.admin_rejection_reason = '';
-        localStorage.setItem('zchut_user', JSON.stringify(parsed));
-      }
+      profile_complete: profileComplete
+    };
+
+    // If ANY document changed or this is a new profile, change status to pending approval
+    if (anyDocumentChanged || !mentorProfile) {
+      // Any document changed or new profile - reset approval status, rejection reason and set status to pending
+      updateData.status = 'pending_approval';
+      updateData.admin_approved = false; // Reset approval - admin needs to approve again
+      updateData.admin_rejection_reason = '';
+      setRejectionReason('');
+      setPendingApproval(true);
+      setShowUpdateMessage(true);
+    } else {
+      // Only profile fields changed (name, id_number, institution, etc.) - keep existing status, approval and rejection reason
+      // Don't change status, admin_approved or rejection reason
     }
+
+    await saveMutation.mutateAsync(updateData);
   };
 
   const calculateProgress = () => {
@@ -235,7 +254,16 @@ export default function MentorProfile() {
           </Alert>
         )}
 
-        {pendingApproval && !rejectionReason && (
+        {showUpdateMessage && (
+          <Alert className="mb-6 bg-blue-50 border-blue-200">
+            <CheckCircle2 className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800">
+              הפרטים עודכנו בהצלחה! הבקשה שלך נשלחה מחדש לאישור מנהל המערכת.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {pendingApproval && !rejectionReason && !showUpdateMessage && (
           <Alert className="mb-6 bg-yellow-50 border-yellow-200">
             <Clock className="h-4 w-4 text-yellow-600" />
             <AlertDescription className="text-yellow-800">

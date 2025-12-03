@@ -18,6 +18,7 @@ export default function MenteeProfile() {
   const [user, setUser] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [showUpdateMessage, setShowUpdateMessage] = useState(false);
   const [formData, setFormData] = useState({
     full_name: '',
     id_number: '',
@@ -29,64 +30,34 @@ export default function MenteeProfile() {
 
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    // Load user from localStorage instead of base44 auth
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      const profile = parsed.menteeProfile || parsed.profile;
-      if (profile) {
-        // Create user object from profile
-        const currentUser = {
-          id: profile.id,
-          email: profile.email || '',
-          ...profile
-        };
-        setUser(currentUser);
-      }
-      
-      // Check approval status
-      if (parsed.menteeProfile && !parsed.menteeApproved) {
-        setPendingApproval(true);
-        if (parsed.menteeProfile.admin_rejection_reason) {
-          setRejectionReason(parsed.menteeProfile.admin_rejection_reason);
-        }
-      }
-    }
-  }, []);
-
-  // Get id_number from localStorage for users who are both mentee and mentor
+  // Get id_number from localStorage - this is the only thing we store
   const getIdNumber = () => {
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      if (parsed.menteeProfile?.id_number) {
-        return parsed.menteeProfile.id_number;
-      }
-      if (parsed.profile?.id_number) {
-        return parsed.profile.id_number;
-      }
-    }
-    return null;
+    return localStorage.getItem('zchut_user_id');
   };
 
+  // Always load from database
   const { data: menteeProfile } = useQuery({
-    queryKey: ['menteeProfile', user?.id],
+    queryKey: ['menteeProfile'],
     queryFn: async () => {
       const idNumber = getIdNumber();
       if (idNumber) {
         const profiles = await Mentee.filter({ id_number: idNumber });
-        if (profiles.length > 0) return profiles[0];
-      }
-      // Fallback to created_by
-      if (user.email) {
-        const profiles = await Mentee.filter({ email: user.email });
-        if (profiles.length > 0) return profiles[0];
+        if (profiles.length > 0) {
+          const profile = profiles[0];
+          // Set user from database
+          setUser({
+            id: profile.id,
+            email: profile.email || '',
+            ...profile
+          });
+          return profile;
+        }
       }
       return null;
-      return profiles[0] || null;
     },
-    enabled: !!user
+    enabled: !!getIdNumber(),
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
   });
 
   useEffect(() => {
@@ -99,6 +70,19 @@ export default function MenteeProfile() {
         aid_fund_confirmation_url: menteeProfile.aid_fund_confirmation_url || '',
         payment_receipt_url: menteeProfile.payment_receipt_url || ''
       });
+      
+      // Hide update message if profile is approved
+      if (menteeProfile.admin_approved) {
+        setShowUpdateMessage(false);
+      }
+      
+      // Update rejection reason if exists
+      if (menteeProfile.admin_rejection_reason) {
+        setRejectionReason(menteeProfile.admin_rejection_reason);
+        setPendingApproval(false);
+      } else if (!menteeProfile.admin_approved && menteeProfile.status === 'pending_admin_approval') {
+        setPendingApproval(true);
+      }
     }
   }, [menteeProfile]);
 
@@ -141,26 +125,37 @@ export default function MenteeProfile() {
       formData.payment_receipt_url
     );
 
-    await saveMutation.mutateAsync({
+    // Check if ANY document changed (even just one)
+    const studyConfirmationChanged = menteeProfile && 
+      formData.study_confirmation_url !== menteeProfile.study_confirmation_url;
+    const aidFundConfirmationChanged = menteeProfile && 
+      formData.aid_fund_confirmation_url !== menteeProfile.aid_fund_confirmation_url;
+    const paymentReceiptChanged = menteeProfile && 
+      formData.payment_receipt_url !== menteeProfile.payment_receipt_url;
+    
+    const anyDocumentChanged = studyConfirmationChanged || aidFundConfirmationChanged || paymentReceiptChanged;
+
+    // Prepare update data
+    const updateData = {
       ...formData,
-      profile_complete: profileComplete,
-      status: profileComplete ? 'pending_admin_approval' : 'pending_documents',
-      admin_rejection_reason: ''
-    });
-    
-    // Update local state
-    setRejectionReason('');
-    setPendingApproval(true);
-    
-    // Update localStorage
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      if (parsed.menteeProfile) {
-        parsed.menteeProfile.admin_rejection_reason = '';
-        localStorage.setItem('zchut_user', JSON.stringify(parsed));
-      }
+      profile_complete: profileComplete
+    };
+
+    // If ANY document changed or this is a new profile, change status to pending admin approval
+    if (anyDocumentChanged || !menteeProfile) {
+      // Any document changed or new profile - reset approval status, rejection reason and set status to pending
+      updateData.status = profileComplete ? 'pending_admin_approval' : 'pending_documents';
+      updateData.admin_approved = false; // Reset approval - admin needs to approve again
+      updateData.admin_rejection_reason = '';
+      setRejectionReason('');
+      setPendingApproval(true);
+      setShowUpdateMessage(true);
+    } else {
+      // Only profile fields changed (name, id_number, institution) - keep existing status, approval and rejection reason
+      // Don't change status, admin_approved or rejection reason
     }
+
+    await saveMutation.mutateAsync(updateData);
   };
 
   const calculateProgress = () => {
@@ -211,7 +206,16 @@ export default function MenteeProfile() {
           </Alert>
         )}
 
-        {pendingApproval && !rejectionReason && (
+        {showUpdateMessage && (
+          <Alert className="mb-6 bg-blue-50 border-blue-200">
+            <CheckCircle2 className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800">
+              הפרטים עודכנו בהצלחה! הבקשה שלך נשלחה מחדש לאישור מנהל המערכת.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {pendingApproval && !rejectionReason && !showUpdateMessage && (
           <Alert className="mb-6 bg-yellow-50 border-yellow-200">
             <Clock className="h-4 w-4 text-yellow-600" />
             <AlertDescription className="text-yellow-800">

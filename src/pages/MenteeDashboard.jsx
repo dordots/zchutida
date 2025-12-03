@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Session } from '@/api/entities';
+import React from 'react';
+import { Session, Mentee, Mentor } from '@/api/entities';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createPageUrl } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,30 +9,50 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { User, Calendar, CreditCard, GraduationCap, AlertTriangle, X, Clock, CalendarPlus } from 'lucide-react';
 
 export default function MenteeDashboard() {
-  const [profile, setProfile] = useState(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const userData = localStorage.getItem('zchut_user');
-    if (!userData) {
-      navigate(createPageUrl('Home'));
-      return;
-    }
-    const parsed = JSON.parse(userData);
-    
-    // If user is 'both', redirect to combined dashboard
-    if (parsed.type === 'both') {
+  // Get id_number from localStorage
+  const idNumber = localStorage.getItem('zchut_user_id');
+
+  // Load mentee profile from database
+  const { data: profile } = useQuery({
+    queryKey: ['menteeProfileForDashboard', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentees = await Mentee.filter({ id_number: idNumber });
+      return mentees.length > 0 ? mentees[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Check if user is also a mentor (to redirect to combined dashboard)
+  const { data: mentorProfile } = useQuery({
+    queryKey: ['mentorProfileForDashboard', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentors = await Mentor.filter({ id_number: idNumber });
+      return mentors.length > 0 ? mentors[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Redirect to combined dashboard if user is both
+  React.useEffect(() => {
+    if (profile && mentorProfile) {
       navigate(createPageUrl('CombinedDashboard'));
-      return;
     }
-    
-    // Support 'mentee' type - show dashboard even if not approved
-    if (parsed.type === 'mentee') {
-      setProfile(parsed.menteeProfile || parsed.profile);
-    } else {
+  }, [profile, mentorProfile, navigate]);
+
+  // Redirect to home if not logged in
+  React.useEffect(() => {
+    if (!idNumber) {
       navigate(createPageUrl('Home'));
     }
-  }, [navigate]);
+  }, [idNumber, navigate]);
 
   const { data: cancelledSessions = [] } = useQuery({
     queryKey: ['cancelledSessionsMentee', profile?.id],
@@ -50,15 +70,22 @@ export default function MenteeDashboard() {
     enabled: !!profile
   });
 
-  const queryClient = useQuery;
+  const queryClient = useQueryClient();
   
   const dismissNotification = async (sessionId) => {
     await Session.update(sessionId, { notification_dismissed_by_mentee: true });
+    queryClient.invalidateQueries(['cancelledSessionsMentee']);
   };
 
-  const isApproved = profile?.admin_approved;
+  const isApproved = profile?.admin_approved === true;
 
-  if (!profile) return null;
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
+        <div className="text-slate-600">טוען...</div>
+      </div>
+    );
+  }
 
   return (
     <div dir="rtl">
@@ -82,6 +109,8 @@ export default function MenteeDashboard() {
                       <AlertTriangle className="h-4 w-4 text-red-600" />
                       <AlertDescription className="text-red-800">
                         <strong>הבקשה שלך נדחתה על ידי המנהל:</strong> {profile.admin_rejection_reason}
+                        <br />
+                        <span className="text-sm">ניתן לעדכן את הפרטים ולשלוח שוב לאישור.</span>
                       </AlertDescription>
                     </Alert>
                   )}

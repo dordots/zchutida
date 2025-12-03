@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Mentee, Mentor, Session } from '@/api/entities';
+import { Mentee, Mentor, Session, Admin } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '../utils';
+import { createPageUrl, openFileUrl } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,29 +16,39 @@ import {
 import moment from 'moment';
 
 export default function AdminDashboard() {
-  const [adminProfile, setAdminProfile] = useState(null);
   const [selectedMentee, setSelectedMentee] = useState(null);
   const [selectedMentor, setSelectedMentor] = useState(null);
   const [hoursToAssign, setHoursToAssign] = useState('');
+  const [hourlyRateToAssign, setHourlyRateToAssign] = useState('');
   const [menteeDialogOpen, setMenteeDialogOpen] = useState(false);
   const [mentorDialogOpen, setMentorDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  // Get id_number from localStorage
+  const idNumber = localStorage.getItem('zchut_user_id');
+
+  // Load admin profile from database
+  const { data: adminProfile } = useQuery({
+    queryKey: ['adminProfile', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const admins = await Admin.filter({ id_number: idNumber });
+      if (admins.length > 0) return admins[0];
+      return null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
   useEffect(() => {
-    const userData = localStorage.getItem('zchut_user');
-    if (!userData) {
-      navigate(createPageUrl('Home'));
-      return;
-    }
-    const parsed = JSON.parse(userData);
-    if (parsed.type === 'admin') {
-      setAdminProfile(parsed.profile);
-    } else {
+    if (idNumber && adminProfile === null) {
+      // Not an admin or not logged in
       navigate(createPageUrl('Home'));
     }
-  }, [navigate]);
+  }, [idNumber, adminProfile, navigate]);
 
   // Fetch all data
   const { data: mentees = [], isLoading: menteesLoading } = useQuery({
@@ -62,7 +72,8 @@ export default function AdminDashboard() {
       return await Mentee.update(menteeId, {
         admin_approved: true,
         hours_balance: parseFloat(hours) || 0,
-        status: 'admin_approved'
+        status: 'admin_approved',
+        admin_rejection_reason: ''
       });
     },
     onSuccess: () => {
@@ -90,17 +101,20 @@ export default function AdminDashboard() {
   });
 
   const approveMentorMutation = useMutation({
-    mutationFn: async (mentorId) => {
+    mutationFn: async ({ mentorId, hourlyRate }) => {
       return await Mentor.update(mentorId, {
         status: 'approved',
         admin_approved: true,
-        available: true
+        available: true,
+        admin_rejection_reason: '',
+        hourly_rate: parseFloat(hourlyRate) || 0
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['allMentors']);
       setMentorDialogOpen(false);
       setSelectedMentor(null);
+      setHourlyRateToAssign('');
     }
   });
 
@@ -117,6 +131,7 @@ export default function AdminDashboard() {
       setMentorDialogOpen(false);
       setSelectedMentor(null);
       setRejectionReason('');
+      setHourlyRateToAssign('');
     }
   });
 
@@ -390,6 +405,7 @@ export default function AdminDashboard() {
                             size="sm"
                             onClick={() => {
                               setSelectedMentor(mentor);
+                              setHourlyRateToAssign(mentor.hourly_rate?.toString() || '');
                               setMentorDialogOpen(true);
                             }}
                           >
@@ -550,12 +566,15 @@ export default function AdminDashboard() {
                   <label className="text-sm text-slate-500 block mb-2">מסמכים</label>
                   <div className="flex flex-wrap gap-2">
                     {selectedMentee.study_confirmation_url ? (
-                      <a href={selectedMentee.study_confirmation_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm" className="border-green-300 text-green-700">
-                          <FileText className="w-4 h-4 ml-1" />
-                          אישור לימודים ✓
-                        </Button>
-                      </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="border-green-300 text-green-700"
+                        onClick={() => openFileUrl(selectedMentee.study_confirmation_url, 'אישור_לימודים.pdf')}
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        אישור לימודים ✓
+                      </Button>
                     ) : (
                       <Button variant="outline" size="sm" disabled className="opacity-50">
                         <FileText className="w-4 h-4 ml-1" />
@@ -563,12 +582,15 @@ export default function AdminDashboard() {
                       </Button>
                     )}
                     {selectedMentee.aid_fund_confirmation_url ? (
-                      <a href={selectedMentee.aid_fund_confirmation_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm" className="border-green-300 text-green-700">
-                          <FileText className="w-4 h-4 ml-1" />
-                          אישור קרן סיוע ✓
-                        </Button>
-                      </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="border-green-300 text-green-700"
+                        onClick={() => openFileUrl(selectedMentee.aid_fund_confirmation_url, 'אישור_קרן_סיוע.pdf')}
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        אישור קרן סיוע ✓
+                      </Button>
                     ) : (
                       <Button variant="outline" size="sm" disabled className="opacity-50">
                         <FileText className="w-4 h-4 ml-1" />
@@ -576,12 +598,15 @@ export default function AdminDashboard() {
                       </Button>
                     )}
                     {selectedMentee.payment_receipt_url ? (
-                      <a href={selectedMentee.payment_receipt_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm" className="border-green-300 text-green-700">
-                          <FileText className="w-4 h-4 ml-1" />
-                          אסמכתת תשלום ✓
-                        </Button>
-                      </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="border-green-300 text-green-700"
+                        onClick={() => openFileUrl(selectedMentee.payment_receipt_url, 'אסמכתת_תשלום.pdf')}
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        אסמכתת תשלום ✓
+                      </Button>
                     ) : (
                       <Button variant="outline" size="sm" disabled className="opacity-50">
                         <FileText className="w-4 h-4 ml-1" />
@@ -589,12 +614,15 @@ export default function AdminDashboard() {
                       </Button>
                     )}
                     {selectedMentee.army_approval_document_url ? (
-                      <a href={selectedMentee.army_approval_document_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm" className="border-green-300 text-green-700">
-                          <FileText className="w-4 h-4 ml-1" />
-                          אישור צבא/קרן ✓
-                        </Button>
-                      </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="border-green-300 text-green-700"
+                        onClick={() => openFileUrl(selectedMentee.army_approval_document_url, 'אישור_צבא_קרן.pdf')}
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        אישור צבא/קרן ✓
+                      </Button>
                     ) : (
                       <Button variant="outline" size="sm" disabled className="opacity-50">
                         <FileText className="w-4 h-4 ml-1" />
@@ -602,12 +630,15 @@ export default function AdminDashboard() {
                       </Button>
                     )}
                     {selectedMentee.invoice_url && (
-                      <a href={selectedMentee.invoice_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm" className="border-blue-300 text-blue-700">
-                          <FileText className="w-4 h-4 ml-1" />
-                          קבלה
-                        </Button>
-                      </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="border-blue-300 text-blue-700"
+                        onClick={() => openFileUrl(selectedMentee.invoice_url, 'קבלה.pdf')}
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        קבלה
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -725,50 +756,76 @@ export default function AdminDashboard() {
                   <label className="text-sm text-slate-500 block mb-2">מסמכים</label>
                   <div className="flex flex-wrap gap-2">
                     {selectedMentor.study_confirmation_url && (
-                      <a href={selectedMentor.study_confirmation_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm">
-                          <FileText className="w-4 h-4 ml-1" />
-                          אישור לימודים
-                        </Button>
-                      </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => openFileUrl(selectedMentor.study_confirmation_url, 'אישור_לימודים.pdf')}
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        אישור לימודים
+                      </Button>
                     )}
                     {selectedMentor.employment_procedure_url && (
-                      <a href={selectedMentor.employment_procedure_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm">
-                          <FileText className="w-4 h-4 ml-1" />
-                          נוהל העסקה
-                        </Button>
-                      </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => openFileUrl(selectedMentor.employment_procedure_url, 'נוהל_העסקה.pdf')}
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        נוהל העסקה
+                      </Button>
                     )}
                     {selectedMentor.form_101_url && (
-                      <a href={selectedMentor.form_101_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm">
-                          <FileText className="w-4 h-4 ml-1" />
-                          טופס 101
-                        </Button>
-                      </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => openFileUrl(selectedMentor.form_101_url, 'טופס_101.pdf')}
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        טופס 101
+                      </Button>
                     )}
                     {selectedMentor.commitment_letter_url && (
-                      <a href={selectedMentor.commitment_letter_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm">
-                          <FileText className="w-4 h-4 ml-1" />
-                          כתב התחייבות
-                        </Button>
-                      </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => openFileUrl(selectedMentor.commitment_letter_url, 'כתב_התחייבות.pdf')}
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        כתב התחייבות
+                      </Button>
                     )}
                   </div>
                 </div>
 
                 {selectedMentor.status === 'pending_approval' && (
-                  <div className="border-t pt-4">
-                    <label className="text-sm text-slate-500 block mb-2">סיבת דחייה (אם רלוונטי)</label>
-                    <Textarea
-                      value={rejectionReason}
-                      onChange={(e) => setRejectionReason(e.target.value)}
-                      placeholder="הסבר למה הבקשה נדחתה..."
-                      className="min-h-20"
-                    />
-                  </div>
+                  <>
+                    <div className="border-t pt-4">
+                      <label className="text-sm text-slate-500 block mb-2">קביעת תעריף לשעה</label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={hourlyRateToAssign}
+                          onChange={(e) => setHourlyRateToAssign(e.target.value)}
+                          placeholder="הזן תעריף לשעה"
+                          className="w-32"
+                          min="0"
+                          step="0.01"
+                        />
+                        <span className="text-sm text-slate-500">₪ לשעה</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">חובה לקבוע תעריף לפני אישור החונך</p>
+                    </div>
+                    <div className="border-t pt-4">
+                      <label className="text-sm text-slate-500 block mb-2">סיבת דחייה (אם רלוונטי)</label>
+                      <Textarea
+                        value={rejectionReason}
+                        onChange={(e) => setRejectionReason(e.target.value)}
+                        placeholder="הסבר למה הבקשה נדחתה..."
+                        className="min-h-20"
+                      />
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -789,11 +846,14 @@ export default function AdminDashboard() {
                   </Button>
                   <Button
                     className="bg-green-600 hover:bg-green-700"
-                    onClick={() => approveMentorMutation.mutate(selectedMentor.id)}
-                    disabled={approveMentorMutation.isPending}
+                    onClick={() => approveMentorMutation.mutate({ 
+                      mentorId: selectedMentor.id, 
+                      hourlyRate: hourlyRateToAssign 
+                    })}
+                    disabled={approveMentorMutation.isPending || !hourlyRateToAssign}
                   >
                     <CheckCircle2 className="w-4 h-4 ml-1" />
-                    אשר חונך
+                    אשר וקבע תעריף
                   </Button>
                 </>
               )}

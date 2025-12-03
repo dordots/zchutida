@@ -1,36 +1,55 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Session, Mentor, Mentee } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { createPageUrl } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Calendar as CalendarIcon, ChevronRight, ChevronLeft, Clock, User, X } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Calendar as CalendarIcon, ChevronRight, ChevronLeft, Clock, User, X, AlertTriangle, Clock as ClockIcon } from 'lucide-react';
 import moment from 'moment';
 
 export default function Calendar() {
-  const [user, setUser] = useState(null);
-  const [userType, setUserType] = useState(null);
-  const [userProfile, setUserProfile] = useState(null);
   const [currentMonth, setCurrentMonth] = useState(moment());
   const [selectedDay, setSelectedDay] = useState(null);
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      const context = localStorage.getItem('zchut_context');
-      
-      if (context === 'mentor' && (parsed.type === 'mentor' || parsed.mentorProfile)) {
-        setUserType('mentor');
-        setUserProfile(parsed.mentorProfile || parsed.profile);
-      } else if (parsed.type === 'mentee' || parsed.menteeProfile) {
-        setUserType('mentee');
-        setUserProfile(parsed.menteeProfile || parsed.profile);
-      } else if (parsed.type === 'mentor') {
-        setUserType('mentor');
-        setUserProfile(parsed.profile);
-      }
-    }
-  }, []);
+  // Get id_number from localStorage
+  const idNumber = localStorage.getItem('zchut_user_id');
+  const context = localStorage.getItem('zchut_context');
+
+  // Load mentor profile from database
+  const { data: mentorProfile } = useQuery({
+    queryKey: ['mentorProfileForCalendar', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentors = await Mentor.filter({ id_number: idNumber });
+      return mentors.length > 0 ? mentors[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Load mentee profile from database
+  const { data: menteeProfile } = useQuery({
+    queryKey: ['menteeProfileForCalendar', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentees = await Mentee.filter({ id_number: idNumber });
+      return mentees.length > 0 ? mentees[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Determine user type and profile
+  const userType = context === 'mentor' && mentorProfile ? 'mentor' : 
+                   (menteeProfile ? 'mentee' : 
+                   (mentorProfile ? 'mentor' : null));
+  const userProfile = userType === 'mentor' ? mentorProfile : menteeProfile;
+  const isMentorApproved = mentorProfile?.admin_approved === true;
 
   const { data: sessions = [] } = useQuery({
     queryKey: ['sessions', userType, userProfile?.id],
@@ -98,6 +117,50 @@ export default function Calendar() {
   };
 
   const days = getDaysInMonth();
+
+  // Check if mentor is approved (if user is mentor)
+  if (userType === 'mentor' && !isMentorApproved) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8">
+            <Alert className="mb-6 bg-amber-50 border-amber-200">
+              <ClockIcon className="h-5 w-5 text-amber-600" />
+              <AlertDescription className="text-amber-800">
+                <strong>הבקשה שלך ממתינה לאישור מנהל המערכת</strong>
+                <br />
+                <span className="text-sm">אין לך הרשאה לגשת לעמוד זה עד שהמנהל יאשר את הפרופיל שלך.</span>
+              </AlertDescription>
+            </Alert>
+            {mentorProfile?.admin_rejection_reason && (
+              <Alert className="mb-6 bg-red-50 border-red-200">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  <strong>הבקשה שלך נדחתה על ידי המנהל:</strong> {mentorProfile.admin_rejection_reason}
+                  <br />
+                  <span className="text-sm">ניתן לעדכן את הפרטים ולשלוח שוב לאישור.</span>
+                </AlertDescription>
+              </Alert>
+            )}
+            <Button 
+              onClick={() => navigate(createPageUrl('MentorProfile'))}
+              className="w-full bg-emerald-600 hover:bg-emerald-700"
+            >
+              לפרופיל שלי
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!userProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
+        <div className="text-slate-600">טוען...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">

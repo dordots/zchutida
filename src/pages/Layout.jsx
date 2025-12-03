@@ -4,22 +4,62 @@ import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { Button } from '@/components/ui/button';
 import { GraduationCap, User, LogOut, Menu, X, Calendar, CreditCard, CalendarPlus, Home, Clock, Users } from 'lucide-react';
+import { Mentee, Mentor, Admin } from '@/api/entities';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Layout({ children, currentPageName }) {
   const [userData, setUserData] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
 
+  // Get id_number from localStorage
+  const idNumber = localStorage.getItem('zchut_user_id');
+
+  // Load user data from database
+  const { data: userProfile } = useQuery({
+    queryKey: ['userProfile', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+
+      const [mentees, mentors, admins] = await Promise.all([
+        Mentee.filter({ id_number: idNumber }),
+        Mentor.filter({ id_number: idNumber }),
+        Admin.filter({ id_number: idNumber })
+      ]);
+
+      const isMentee = mentees.length > 0;
+      const isMentor = mentors.length > 0;
+      const isAdmin = admins.length > 0;
+
+      if (isAdmin) {
+        return {
+          type: 'admin',
+          profile: admins[0]
+        };
+      }
+
+      const userType = (isMentee && isMentor) ? 'both' : (isMentee ? 'mentee' : 'mentor');
+      
+      return {
+        type: userType,
+        menteeProfile: isMentee ? mentees[0] : null,
+        mentorProfile: isMentor ? mentors[0] : null,
+        profile: isMentee ? mentees[0] : mentors[0]
+      };
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
   useEffect(() => {
-    const data = localStorage.getItem('zchut_user');
-    if (data) {
-      const parsed = JSON.parse(data);
-      setUserData(parsed);
+    if (userProfile) {
+      setUserData(userProfile);
     }
-  }, [currentPageName]);
+  }, [userProfile]);
 
   const handleLogout = () => {
-    localStorage.removeItem('zchut_user');
+    localStorage.removeItem('zchut_user_id');
     navigate(createPageUrl('Home'));
   };
 

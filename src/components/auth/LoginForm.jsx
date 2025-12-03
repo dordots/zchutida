@@ -37,30 +37,17 @@ export default function LoginForm({ onClose }) {
 
       // Admin takes priority
       if (isAdmin) {
-        localStorage.setItem('zchut_user', JSON.stringify({
-          type: 'admin',
-          profile: admins[0]
-        }));
+        // Store only id_number for identification
+        localStorage.setItem('zchut_user_id', idNumber);
         navigate(createPageUrl('AdminDashboard'));
         return;
       }
 
-      // Check if user is approved by admin
-      const menteeApproved = isMentee && mentees[0].admin_approved;
-      const mentorApproved = isMentor && mentors[0].admin_approved;
-
       // Determine user type - 'both' if registered in both, regardless of approval status
       const userType = (isMentee && isMentor) ? 'both' : (isMentee ? 'mentee' : 'mentor');
 
-      // Store user info - include all profiles, mark approval status
-      localStorage.setItem('zchut_user', JSON.stringify({
-        type: userType,
-        menteeProfile: isMentee ? mentees[0] : null,
-        mentorProfile: isMentor ? mentors[0] : null,
-        profile: isMentee ? mentees[0] : mentors[0],
-        menteeApproved,
-        mentorApproved
-      }));
+      // Store only id_number for identification - all data will be loaded from database
+      localStorage.setItem('zchut_user_id', idNumber);
 
       // Navigate based on type - always go to dashboard
       if (userType === 'both') {

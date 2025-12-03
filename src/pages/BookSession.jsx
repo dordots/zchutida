@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Mentor, Session } from '@/api/entities';
+import React, { useState } from 'react';
+import { Mentor, Session, Mentee } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Calendar, Clock, User, CheckCircle2, Loader2 } from 'lucide-react';
+import { Calendar, Clock, User, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react';
 import moment from 'moment';
 
 const DAYS = [
@@ -22,7 +22,6 @@ const DAYS = [
 ];
 
 export default function BookSession() {
-  const [menteeProfile, setMenteeProfile] = useState(null);
   const [selectedMentor, setSelectedMentor] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [slotType, setSlotType] = useState('recurring'); // 'recurring' or 'specific'
@@ -35,33 +34,36 @@ export default function BookSession() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    const userData = localStorage.getItem('zchut_user');
-    if (!userData) {
-      navigate(createPageUrl('Home'));
-      return;
-    }
-    const parsed = JSON.parse(userData);
-    if (parsed.menteeProfile) {
-      setMenteeProfile(parsed.menteeProfile);
-    } else if (parsed.type === 'mentee') {
-      setMenteeProfile(parsed.profile);
-    }
-  }, [navigate]);
+  // Get id_number from localStorage
+  const idNumber = localStorage.getItem('zchut_user_id');
 
-  // Get mentor profile if user is also a mentor (to filter out self)
-  const [mentorProfileId, setMentorProfileId] = useState(null);
-  useEffect(() => {
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      if (parsed.mentorProfile) {
-        setMentorProfileId(parsed.mentorProfile.id);
-      } else if (parsed.type === 'mentor') {
-        setMentorProfileId(parsed.profile?.id);
-      }
-    }
-  }, []);
+  // Load mentee profile from database
+  const { data: menteeProfile } = useQuery({
+    queryKey: ['menteeProfileForBookSession', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentees = await Mentee.filter({ id_number: idNumber });
+      return mentees.length > 0 ? mentees[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Load mentor profile if user is also a mentor (to filter out self)
+  const { data: mentorProfile } = useQuery({
+    queryKey: ['mentorProfileForBookSession', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentors = await Mentor.filter({ id_number: idNumber });
+      return mentors.length > 0 ? mentors[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  const mentorProfileId = mentorProfile?.id;
 
   const { data: mentors = [], isLoading } = useQuery({
     queryKey: ['availableMentors'],
@@ -314,6 +316,45 @@ export default function BookSession() {
             <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-slate-900 mb-2">המפגש נשמר בהצלחה!</h2>
             <p className="text-slate-600">מעביר אותך ללוח השנה...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Check if mentee is approved
+  if (!menteeProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
+        <Card className="max-w-md w-full text-center">
+          <CardContent className="p-8">
+            <Loader2 className="w-12 h-12 text-emerald-600 animate-spin mx-auto mb-4" />
+            <p className="text-slate-600">טוען...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!menteeProfile.admin_approved) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8">
+            <Alert className="mb-6 bg-amber-50 border-amber-200">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <AlertDescription className="text-amber-800">
+                <strong>אין לך הרשאה לקבוע מפגשים</strong>
+                <br />
+                <span className="text-sm">הפרופיל שלך ממתין לאישור מנהל המערכת. לאחר האישור תוכל לקבוע מפגשים.</span>
+              </AlertDescription>
+            </Alert>
+            <Button 
+              onClick={() => navigate(createPageUrl('MenteeProfile'))}
+              className="w-full bg-emerald-600 hover:bg-emerald-700"
+            >
+              לפרופיל שלי
+            </Button>
           </CardContent>
         </Card>
       </div>

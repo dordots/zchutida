@@ -1,59 +1,38 @@
-// Firebase Storage Service
-// For file uploads (replacing base44.integrations.Core.UploadFile)
+// File Upload Service
+// Using base64 encoding as alternative to Firebase Storage
+// Files are converted to base64 and stored as data URLs in Firestore
+// Note: Suitable for files up to ~1MB. For larger files, consider a cloud storage service.
 
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { storage } from './config';
+import { uploadFileBase64 } from '../utils/fileUpload';
 
 /**
- * Upload a file to Firebase Storage
+ * Upload a file using base64 encoding
+ * Files are stored as data URLs in Firestore
+ * Suitable for files up to ~1MB
  */
 export const uploadFile = async (file, path = 'uploads') => {
-  try {
-    // Create a unique filename
-    const timestamp = Date.now();
-    const fileName = `${timestamp}_${file.name}`;
-    const storageRef = ref(storage, `${path}/${fileName}`);
-    
-    // Upload file
-    await uploadBytes(storageRef, file);
-    
-    // Get download URL
-    const downloadURL = await getDownloadURL(storageRef);
-    
-    return { 
-      success: true, 
-      url: downloadURL,
-      file_url: downloadURL, // For compatibility with existing code
-      fileName 
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  return await uploadFileBase64(file, path);
 };
 
 /**
- * Delete a file from Firebase Storage
+ * Delete a file (placeholder - files are stored in Firestore as base64)
+ * In this implementation, files are stored directly in documents, so deletion
+ * is handled by updating the document field to null/empty
  */
 export const deleteFile = async (filePath) => {
-  try {
-    const storageRef = ref(storage, filePath);
-    await deleteObject(storageRef);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  // Files are stored as data URLs in Firestore, so deletion is handled
+  // by removing the field from the document
+  return { success: true };
 };
 
 /**
- * Get download URL for a file
+ * Get file URL (for base64, the URL is the data URL itself)
  */
 export const getFileURL = async (filePath) => {
-  try {
-    const storageRef = ref(storage, filePath);
-    const url = await getDownloadURL(storageRef);
-    return { success: true, url };
-  } catch (error) {
-    return { success: false, error: error.message };
+  // If filePath is already a data URL, return it
+  if (filePath && (filePath.startsWith('data:') || filePath.startsWith('http'))) {
+    return { success: true, url: filePath };
   }
+  return { success: false, error: 'File not found' };
 };
 

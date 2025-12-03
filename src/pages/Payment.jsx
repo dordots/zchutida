@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CreditCard, CheckCircle2, FileText, Upload, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '../utils';
+import { createPageUrl, openFileUrl } from '../utils';
 import FileUploadField from '../components/profile/FileUploadField';
 import { uploadFile } from '@/firebase/storage';
 
@@ -29,67 +29,43 @@ export default function Payment() {
   });
   const [invoiceUrl, setInvoiceUrl] = useState('');
   const [armyApprovalUrl, setArmyApprovalUrl] = useState('');
+  const [showPendingMessage, setShowPendingMessage] = useState(false);
+  const [showCompletionMessage, setShowCompletionMessage] = useState(false);
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    // Load user from localStorage instead of base44 auth
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      const profile = parsed.menteeProfile || parsed.profile;
-      if (profile) {
-        // Create user object from profile
-        const currentUser = {
-          id: profile.id,
-          email: profile.email || '',
-          ...profile
-        };
-        setUser(currentUser);
-        
-        // Pre-fill email from profile
-        if (profile.email) {
-          setPaymentData(prev => ({ ...prev, email: profile.email }));
-        }
-      }
-    }
-  }, []);
-
-  // Get id_number from localStorage for users who are both mentee and mentor
+  // Get id_number from localStorage - this is the only thing we store
   const getIdNumber = () => {
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      if (parsed.menteeProfile?.id_number) {
-        return parsed.menteeProfile.id_number;
-      }
-      if (parsed.profile?.id_number) {
-        return parsed.profile.id_number;
-      }
-    }
-    return null;
+    return localStorage.getItem('zchut_user_id');
   };
 
+  // Always load from database
   const { data: menteeProfile } = useQuery({
-    queryKey: ['menteeProfile', user?.id],
+    queryKey: ['menteeProfile'],
     queryFn: async () => {
       const idNumber = getIdNumber();
       if (idNumber) {
         const profiles = await Mentee.filter({ id_number: idNumber });
-        if (profiles.length > 0) return profiles[0];
+        if (profiles.length > 0) {
+          const profile = profiles[0];
+          // Set user from database
+          setUser({
+            id: profile.id,
+            email: profile.email || '',
+            ...profile
+          });
+          return profile;
+        }
       }
-      // Fallback to email if available
-      if (user.email) {
-        const profiles = await Mentee.filter({ email: user.email });
-        if (profiles.length > 0) return profiles[0];
-      }
-      return profiles[0] || null;
+      return null;
     },
-    enabled: !!user
+    enabled: !!getIdNumber(),
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
   });
 
-  // Auto-fill form from existing profile
+  // Auto-fill form from existing profile and determine current step
   useEffect(() => {
     if (menteeProfile) {
       setPaymentData(prev => ({
@@ -98,17 +74,41 @@ export default function Payment() {
         id_number: menteeProfile.id_number || prev.id_number,
         institution: menteeProfile.institution || prev.institution,
         // Keep existing values if profile doesn't have them
-        address: prev.address,
-        city: prev.city,
-        phone: prev.phone,
-        email: prev.email || user?.email || '',
-        comments: prev.comments
+        address: prev.address || menteeProfile.address || '',
+        city: prev.city || menteeProfile.city || '',
+        phone: prev.phone || menteeProfile.phone || '',
+        email: prev.email || menteeProfile.email || user?.email || '',
+        comments: prev.comments || menteeProfile.comments || ''
       }));
 
-      if (menteeProfile.payment_status === 'paid' && menteeProfile.army_approval_status === 'pending') {
-        setStep('army_approval');
-      } else if (menteeProfile.payment_status === 'paid') {
-        setStep('invoice');
+      // Determine step based on payment status and army approval
+      // If payment is done, show all completed steps (don't get stuck on step 2)
+      if (menteeProfile.payment_status === 'paid') {
+        if (menteeProfile.army_approval_status === 'approved') {
+          // All steps completed - show army approval step with completion message
+          setStep('army_approval');
+          setShowCompletionMessage(true);
+        } else if (menteeProfile.army_approval_status === 'pending') {
+          // Payment done, waiting for army approval
+          setStep('army_approval');
+          setShowCompletionMessage(false);
+        } else {
+          // Payment done, show invoice
+          setStep('invoice');
+        }
+      } else {
+        // Payment not done yet - show payment step
+        setStep('payment');
+      }
+      
+      // Set army approval URL if exists
+      if (menteeProfile.army_approval_document_url) {
+        setArmyApprovalUrl(menteeProfile.army_approval_document_url);
+      }
+      
+      // Hide pending message if profile is approved
+      if (menteeProfile.admin_approved) {
+        setShowPendingMessage(false);
       }
     }
   }, [menteeProfile, user]);
@@ -127,7 +127,8 @@ export default function Payment() {
           payment_status: 'paid',
           payment_date: new Date().toISOString().split('T')[0],
           invoice_url: fakeInvoiceUrl,
-          status: 'paid_pending_army_approval'
+          status: 'paid_pending_army_approval',
+          admin_rejection_reason: ''
         });
       } else {
         return await Mentee.create({
@@ -139,13 +140,15 @@ export default function Payment() {
           payment_date: new Date().toISOString().split('T')[0],
           invoice_url: fakeInvoiceUrl,
           status: 'paid_pending_army_approval',
-          army_approval_status: 'pending'
+          army_approval_status: 'pending',
+          admin_rejection_reason: ''
         });
       }
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries(['menteeProfile']);
       setInvoiceUrl(data.invoice_url);
+      setShowPendingMessage(true);
       setStep('invoice');
     }
   });
@@ -161,7 +164,9 @@ export default function Payment() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['menteeProfile']);
-      navigate(createPageUrl('SelectMentor'));
+      // Show completion message instead of navigating
+      setShowCompletionMessage(true);
+      setArmyApprovalUrl('');
     }
   });
 
@@ -190,31 +195,32 @@ export default function Payment() {
   };
 
   const goToStep = (targetStep) => {
-    const steps = ['payment', 'invoice', 'army_approval'];
-    const currentIndex = steps.indexOf(step);
-    const targetIndex = steps.indexOf(targetStep);
-    
-    // Can always go back
-    if (targetIndex < currentIndex) {
+    // If payment is done, allow navigation to all steps
+    if (menteeProfile?.payment_status === 'paid') {
       setStep(targetStep);
       return;
     }
     
-    // Can only go forward if conditions are met
-    if (targetStep === 'invoice' && menteeProfile?.payment_status === 'paid') {
-      setStep('invoice');
-    } else if (targetStep === 'army_approval' && menteeProfile?.payment_status === 'paid') {
-      setStep('army_approval');
+    // If payment not done, only allow going to payment step
+    if (targetStep === 'payment') {
+      setStep('payment');
     }
   };
 
   const canGoBack = () => {
+    // Can go back from any step except payment
     return step !== 'payment';
   };
 
   const canGoForward = () => {
+    // If payment is done, can navigate between all steps
+    if (menteeProfile?.payment_status === 'paid') {
+      if (step === 'payment') return true; // Can go to invoice
+      if (step === 'invoice') return true; // Can go to army_approval
+      if (step === 'army_approval') return false; // Last step
+    }
+    // If payment not done, can only proceed from payment if paid
     if (step === 'payment' && menteeProfile?.payment_status === 'paid') return true;
-    if (step === 'invoice') return true;
     return false;
   };
 
@@ -263,13 +269,13 @@ export default function Payment() {
           >
             <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
               step === 'invoice' ? 'bg-emerald-600 text-white' : 
-              step === 'army_approval' ? 'bg-emerald-200 text-emerald-700' : 'bg-slate-200'
+              menteeProfile?.payment_status === 'paid' ? 'bg-emerald-200 text-emerald-700' : 'bg-slate-200'
             }`}>
-              {step === 'army_approval' ? <CheckCircle2 className="w-5 h-5" /> : '2'}
+              {menteeProfile?.payment_status === 'paid' && step !== 'invoice' ? <CheckCircle2 className="w-5 h-5" /> : '2'}
             </div>
             <span className="font-medium">קבלה</span>
           </button>
-          <div className="w-12 h-0.5 bg-slate-300" />
+          <div className={`w-12 h-0.5 ${menteeProfile?.payment_status === 'paid' ? 'bg-emerald-300' : 'bg-slate-300'}`} />
           <button 
             onClick={() => goToStep('army_approval')}
             disabled={menteeProfile?.payment_status !== 'paid'}
@@ -279,9 +285,10 @@ export default function Payment() {
             }`}
           >
             <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-              step === 'army_approval' ? 'bg-emerald-600 text-white' : 'bg-slate-200'
+              step === 'army_approval' ? 'bg-emerald-600 text-white' : 
+              menteeProfile?.army_approval_status === 'approved' ? 'bg-emerald-200 text-emerald-700' : 'bg-slate-200'
             }`}>
-              3
+              {menteeProfile?.army_approval_status === 'approved' && step !== 'army_approval' ? <CheckCircle2 className="w-5 h-5" /> : '3'}
             </div>
             <span className="font-medium">אישור צבא</span>
           </button>
@@ -326,7 +333,16 @@ export default function Payment() {
                 </AlertDescription>
               </Alert>
 
-              {menteeProfile?.payment_status === 'paid' && (
+              {showPendingMessage && (
+                <Alert className="mb-6 bg-blue-50 border-blue-200">
+                  <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-800">
+                    התשלום בוצע בהצלחה! הבקשה שלך נשלחה מחדש לאישור מנהל המערכת.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {menteeProfile?.payment_status === 'paid' && !showPendingMessage && (
                 <Alert className="mb-6 bg-green-50 border-green-200">
                   <CheckCircle2 className="h-4 w-4 text-green-600" />
                   <AlertDescription className="text-green-800">
@@ -557,7 +573,7 @@ export default function Payment() {
                 <h3 className="font-semibold text-lg mb-2">הקבלה שלך מוכנה</h3>
                 <p className="text-slate-600 mb-4">סכום: ₪{menteeProfile?.payment_amount?.toLocaleString() || paymentData.payment_amount.toLocaleString()}</p>
                 <Button
-                  onClick={() => window.open(menteeProfile?.invoice_url || invoiceUrl, '_blank')}
+                  onClick={() => openFileUrl(menteeProfile?.invoice_url || invoiceUrl, 'קבלה.pdf')}
                   variant="outline"
                   className="border-emerald-600 text-emerald-600"
                 >
@@ -596,38 +612,85 @@ export default function Payment() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Alert className="mb-6 bg-blue-50 border-blue-200">
-                <AlertDescription className="text-blue-800">
-                  העלה את אישור הזכאות שקיבלת מהצבא/קרן הסיוע. 
-                  לאחר העלאה תוכל להמשיך לבחירת חונך והתחלת הלימודים.
-                </AlertDescription>
-              </Alert>
+              {showCompletionMessage || menteeProfile?.army_approval_status === 'approved' ? (
+                <>
+                  <Alert className="mb-6 bg-green-50 border-green-200">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <AlertDescription className="text-green-800">
+                      <strong>כל השלבים הושלמו בהצלחה!</strong>
+                      <br />
+                      אישור הזכאות הועלה. כעת תוכל לבחור חונך ולהתחיל את תהליך החניכה.
+                    </AlertDescription>
+                  </Alert>
 
-              <FileUploadField
-                label="אישור זכאות מהצבא"
-                required
-                fileUrl={armyApprovalUrl}
-                onUpload={handleFileUpload}
-                description="העלה את מכתב האישור שקיבלת מקרן הסיוע"
-              />
+                  {menteeProfile?.army_approval_document_url && (
+                    <div className="mb-6">
+                      <Label className="text-sm text-slate-500 block mb-2">אישור זכאות שהועלה:</Label>
+                      <Button
+                        variant="outline"
+                        onClick={() => openFileUrl(menteeProfile.army_approval_document_url, 'אישור_זכאות.pdf')}
+                        className="border-green-300 text-green-700"
+                      >
+                        <FileText className="w-4 h-4 ml-1" />
+                        צפה באישור
+                      </Button>
+                    </div>
+                  )}
 
-              <Button
-                onClick={handleArmyApprovalSubmit}
-                disabled={!armyApprovalUrl || submitArmyApprovalMutation.isPending}
-                className="w-full mt-6 bg-emerald-600 hover:bg-emerald-700"
-              >
-                <CheckCircle2 className="w-4 h-4 ml-2" />
-                {submitArmyApprovalMutation.isPending ? 'שומר...' : 'המשך לבחירת חונך'}
-              </Button>
+                  <div className="bg-slate-50 p-4 rounded-lg mb-6">
+                    <h3 className="font-semibold mb-2">סיכום התהליך:</h3>
+                    <ul className="space-y-2 text-sm text-slate-600">
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        תשלום בוצע: ₪{menteeProfile?.payment_amount?.toLocaleString() || '0'}
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        קבלה נוצרה ונשלחה
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        אישור זכאות הועלה
+                      </li>
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Alert className="mb-6 bg-blue-50 border-blue-200">
+                    <AlertDescription className="text-blue-800">
+                      העלה את אישור הזכאות שקיבלת מהצבא/קרן הסיוע. 
+                      לאחר העלאה תוכל להמשיך לבחירת חונך והתחלת הלימודים.
+                    </AlertDescription>
+                  </Alert>
 
-              <div className="mt-4 text-center">
-                <p className="text-sm text-slate-600">
-                  לא קיבלת אישור?{' '}
-                  <button className="text-emerald-600 hover:underline">
-                    בקש החזר כספי
-                  </button>
-                </p>
-              </div>
+                  <FileUploadField
+                    label="אישור זכאות מהצבא"
+                    required
+                    fileUrl={armyApprovalUrl}
+                    onUpload={handleFileUpload}
+                    description="העלה את מכתב האישור שקיבלת מקרן הסיוע"
+                  />
+
+                  <Button
+                    onClick={handleArmyApprovalSubmit}
+                    disabled={!armyApprovalUrl || submitArmyApprovalMutation.isPending}
+                    className="w-full mt-6 bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    <CheckCircle2 className="w-4 h-4 ml-2" />
+                    {submitArmyApprovalMutation.isPending ? 'שומר...' : 'אישור והשלמה'}
+                  </Button>
+
+                  <div className="mt-4 text-center">
+                    <p className="text-sm text-slate-600">
+                      לא קיבלת אישור?{' '}
+                      <button className="text-emerald-600 hover:underline">
+                        בקש החזר כספי
+                      </button>
+                    </p>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         )}

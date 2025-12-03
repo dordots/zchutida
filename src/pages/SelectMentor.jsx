@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Mentor } from '@/api/entities';
+import React, { useState } from 'react';
+import { Mentor, Mentee } from '@/api/entities';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,25 +28,38 @@ export default function SelectMentor() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('all');
   const [selectedInstitution, setSelectedInstitution] = useState('all');
-  const [ownMentorId, setOwnMentorId] = useState(null);
-  const [isApproved, setIsApproved] = useState(false);
 
-  useEffect(() => {
-    // Check approval status and mentor id from localStorage
-    const userData = localStorage.getItem('zchut_user');
-    if (userData) {
-      const parsed = JSON.parse(userData);
-      // Check mentee approval status
-      setIsApproved(parsed.menteeApproved === true);
-      
-      // Check if user is also a mentor
-      if (parsed.mentorProfile) {
-        setOwnMentorId(parsed.mentorProfile.id);
-      } else if (parsed.type === 'mentor') {
-        setOwnMentorId(parsed.profile?.id);
-      }
-    }
-  }, []);
+  // Get id_number from localStorage
+  const idNumber = localStorage.getItem('zchut_user_id');
+
+  // Load mentee profile from database to check approval
+  const { data: menteeProfile } = useQuery({
+    queryKey: ['menteeProfileForSelectMentor', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentees = await Mentee.filter({ id_number: idNumber });
+      return mentees.length > 0 ? mentees[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Load mentor profile if user is also a mentor
+  const { data: mentorProfile } = useQuery({
+    queryKey: ['mentorProfileForSelectMentor', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentors = await Mentor.filter({ id_number: idNumber });
+      return mentors.length > 0 ? mentors[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  const isApproved = menteeProfile?.admin_approved === true;
+  const ownMentorId = mentorProfile?.id;
 
   // Fetch approved mentors
   const { data: mentors = [], isLoading } = useQuery({
