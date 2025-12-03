@@ -1,36 +1,69 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { Mentee, Mentor } from '@/api/entities';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { createPageUrl } from '../utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { User, GraduationCap, LogOut } from 'lucide-react';
 
 export default function Dashboard() {
-  const [userData, setUserData] = useState(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const data = localStorage.getItem('zchut_user');
-    if (!data) {
+  // Get id_number from localStorage
+  const idNumber = localStorage.getItem('zchut_user_id');
+
+  // Load mentee profile from database
+  const { data: menteeProfile } = useQuery({
+    queryKey: ['menteeProfileForDashboard', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentees = await Mentee.filter({ id_number: idNumber });
+      return mentees.length > 0 ? mentees[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Load mentor profile from database
+  const { data: mentorProfile } = useQuery({
+    queryKey: ['mentorProfileForDashboard', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentors = await Mentor.filter({ id_number: idNumber });
+      return mentors.length > 0 ? mentors[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Redirect based on user type
+  React.useEffect(() => {
+    if (!idNumber) {
       navigate(createPageUrl('Home'));
-      return;
+    } else if (menteeProfile && mentorProfile) {
+      // Both - stay on this page
+    } else if (menteeProfile) {
+      navigate(createPageUrl('MenteeDashboard'));
+    } else if (mentorProfile) {
+      navigate(createPageUrl('MentorDashboard'));
     }
-    const parsed = JSON.parse(data);
-    if (parsed.type !== 'both') {
-      // Redirect to specific dashboard if not both
-      if (parsed.type === 'mentee') navigate(createPageUrl('MenteeDashboard'));
-      else if (parsed.type === 'mentor') navigate(createPageUrl('MentorDashboard'));
-      return;
-    }
-    setUserData(parsed);
-  }, [navigate]);
+  }, [idNumber, menteeProfile, mentorProfile, navigate]);
 
   const handleLogout = () => {
-    localStorage.removeItem('zchut_user');
+    localStorage.removeItem('zchut_user_id');
     navigate(createPageUrl('Home'));
   };
 
-  if (!userData) return null;
+  if (!menteeProfile || !mentorProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
+        <div className="text-slate-600">טוען...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
@@ -45,7 +78,7 @@ export default function Dashboard() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-600">שלום, {userData.profile?.full_name}</span>
+            <span className="text-sm text-slate-600">שלום, {menteeProfile?.full_name || mentorProfile?.full_name}</span>
             <span className="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-700">חניך + חונך</span>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="w-4 h-4 ml-2" />
@@ -56,7 +89,7 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-5xl mx-auto p-6">
-        <h1 className="text-3xl font-bold text-slate-900 mb-4">שלום {userData.profile?.full_name}!</h1>
+        <h1 className="text-3xl font-bold text-slate-900 mb-4">שלום {menteeProfile?.full_name || mentorProfile?.full_name}!</h1>
         <p className="text-slate-600 mb-8">אתה רשום גם כחניך וגם כחונך. בחר לאיזה אזור להיכנס:</p>
 
         <div className="grid md:grid-cols-2 gap-6">

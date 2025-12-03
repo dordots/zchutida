@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Session } from '@/api/entities';
+import React from 'react';
+import { Session, Mentee, Mentor } from '@/api/entities';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createPageUrl } from '../utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,25 +9,55 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { User, Calendar, CreditCard, GraduationCap, AlertTriangle, X, Clock, CalendarPlus } from 'lucide-react';
 
 export default function CombinedDashboard() {
-  const [userData, setUserData] = useState(null);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    const data = localStorage.getItem('zchut_user');
-    if (!data) {
-      navigate(createPageUrl('Home'));
-      return;
-    }
-    const parsed = JSON.parse(data);
-    if (parsed.type !== 'both') {
-      navigate(createPageUrl('Home'));
-      return;
-    }
-    setUserData(parsed);
-  }, [navigate]);
+  // Get id_number from localStorage
+  const idNumber = localStorage.getItem('zchut_user_id');
 
-  const menteeProfile = userData?.menteeProfile;
-  const mentorProfile = userData?.mentorProfile;
+  // Load mentee profile from database
+  const { data: menteeProfile } = useQuery({
+    queryKey: ['menteeProfileForCombined', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentees = await Mentee.filter({ id_number: idNumber });
+      return mentees.length > 0 ? mentees[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Load mentor profile from database
+  const { data: mentorProfile } = useQuery({
+    queryKey: ['mentorProfileForCombined', idNumber],
+    queryFn: async () => {
+      if (!idNumber) return null;
+      const mentors = await Mentor.filter({ id_number: idNumber });
+      return mentors.length > 0 ? mentors[0] : null;
+    },
+    enabled: !!idNumber,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true
+  });
+
+  // Redirect if not both or not logged in
+  React.useEffect(() => {
+    if (!idNumber) {
+      navigate(createPageUrl('Home'));
+    } else if (!menteeProfile && !mentorProfile) {
+      // Still loading
+    } else if (!menteeProfile || !mentorProfile) {
+      // Not both - redirect to appropriate dashboard
+      if (menteeProfile) {
+        navigate(createPageUrl('MenteeDashboard'));
+      } else if (mentorProfile) {
+        navigate(createPageUrl('MentorDashboard'));
+      } else {
+        navigate(createPageUrl('Home'));
+      }
+    }
+  }, [idNumber, menteeProfile, mentorProfile, navigate]);
 
   const { data: menteeCancelledSessions = [] } = useQuery({
     queryKey: ['cancelledSessionsMentee', menteeProfile?.id],
@@ -59,13 +89,21 @@ export default function CombinedDashboard() {
 
   const dismissMenteeNotification = async (sessionId) => {
     await Session.update(sessionId, { notification_dismissed_by_mentee: true });
+    queryClient.invalidateQueries(['cancelledSessionsMentee']);
   };
 
   const dismissMentorNotification = async (sessionId) => {
     await Session.update(sessionId, { notification_dismissed_by_mentor: true });
+    queryClient.invalidateQueries(['cancelledSessionsMentor']);
   };
 
-  if (!userData) return null;
+  if (!menteeProfile || !mentorProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
+        <div className="text-slate-600">טוען...</div>
+      </div>
+    );
+  }
 
   return (
     <div dir="rtl">

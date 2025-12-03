@@ -29,6 +29,32 @@ export default function ReportHours() {
     refetchOnWindowFocus: true
   });
 
+  // Get sessions for this mentor - must be called before any early returns
+  const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
+    queryKey: ['mentorSessions', mentorProfile?.id],
+    queryFn: async () => {
+      if (!mentorProfile?.id) return [];
+      return await Session.filter({ mentor_id: mentorProfile.id });
+    },
+    enabled: !!mentorProfile?.id
+  });
+
+  // Get mentees for display names - must be called before any early returns
+  const { data: mentees = [] } = useQuery({
+    queryKey: ['mentees'],
+    queryFn: () => Mentee.list()
+  });
+
+  // Get pending sessions that need mentor approval - must be called before any early returns
+  const { data: pendingApproval = [] } = useQuery({
+    queryKey: ['pendingApproval', mentorProfile?.id],
+    queryFn: async () => {
+      if (!mentorProfile?.id) return [];
+      return await Session.filter({ mentor_id: mentorProfile.id, status: 'pending' });
+    },
+    enabled: !!mentorProfile?.id
+  });
+
   const isApproved = mentorProfile?.admin_approved === true;
 
   if (!mentorProfile) {
@@ -74,30 +100,6 @@ export default function ReportHours() {
     );
   }
 
-  // Get sessions for this mentor
-  const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
-    queryKey: ['mentorSessions', mentorProfile?.id],
-    queryFn: async () => {
-      return await Session.filter({ mentor_id: mentorProfile.id });
-    },
-    enabled: !!mentorProfile
-  });
-
-  // Get mentees for display names
-  const { data: mentees = [] } = useQuery({
-    queryKey: ['mentees'],
-    queryFn: () => Mentee.list()
-  });
-
-  // Get pending sessions that need mentor approval
-  const { data: pendingApproval = [] } = useQuery({
-    queryKey: ['pendingApproval', mentorProfile?.id],
-    queryFn: async () => {
-      return await Session.filter({ mentor_id: mentorProfile.id, status: 'pending' });
-    },
-    enabled: !!mentorProfile
-  });
-
   const getMenteeName = (menteeId) => mentees.find(m => m.id === menteeId)?.full_name || 'חניך';
 
   const today = moment();
@@ -128,17 +130,6 @@ export default function ReportHours() {
 
   // Pending approval count
   const pendingCount = pendingApproval.length;
-
-  if (!mentorProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 text-emerald-600 animate-spin mx-auto mb-4" />
-          <p className="text-slate-600">טוען...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
