@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Mentor } from '@/api/entities';
+import { uploadFile } from '@/firebase/storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,29 +53,39 @@ export default function MentorProfile() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const loadUser = async () => {
-      const currentUser = await base44.auth.me();
-      setUser(currentUser);
+    // Load user from localStorage instead of base44 auth
+    const userData = localStorage.getItem('zchut_user');
+    if (userData) {
+      const parsed = JSON.parse(userData);
+      const profile = parsed.mentorProfile || parsed.profile;
+      if (profile) {
+        // Create user object from profile
+        const currentUser = {
+          id: profile.id,
+          email: profile.email || '',
+          ...profile
+        };
+        setUser(currentUser);
+      }
       
-      // Check approval status from localStorage
-      const userData = localStorage.getItem('zchut_user');
-      if (userData) {
-        const parsed = JSON.parse(userData);
-        if (parsed.mentorProfile && !parsed.mentorApproved) {
-          setPendingApproval(true);
-          if (parsed.mentorProfile.admin_rejection_reason) {
-            setRejectionReason(parsed.mentorProfile.admin_rejection_reason);
-          }
+      // Check approval status
+      if (parsed.mentorProfile && !parsed.mentorApproved) {
+        setPendingApproval(true);
+        if (parsed.mentorProfile.admin_rejection_reason) {
+          setRejectionReason(parsed.mentorProfile.admin_rejection_reason);
         }
       }
-    };
-    loadUser();
+    }
   }, []);
 
   const { data: mentorProfile } = useQuery({
     queryKey: ['mentorProfile', user?.id],
     queryFn: async () => {
-      const profiles = await base44.entities.Mentor.filter({ created_by: user.email });
+      if (user.email) {
+        const profiles = await Mentor.filter({ email: user.email });
+        if (profiles.length > 0) return profiles[0];
+      }
+      return null;
       return profiles[0] || null;
     },
     enabled: !!user
@@ -103,9 +114,9 @@ export default function MentorProfile() {
   const saveMutation = useMutation({
     mutationFn: async (data) => {
       if (mentorProfile) {
-        return await base44.entities.Mentor.update(mentorProfile.id, data);
+        return await Mentor.update(mentorProfile.id, data);
       } else {
-        return await base44.entities.Mentor.create(data);
+        return await Mentor.create(data);
       }
     },
     onSuccess: () => {
@@ -114,8 +125,18 @@ export default function MentorProfile() {
   });
 
   const handleFileUpload = async (file, field) => {
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setFormData(prev => ({ ...prev, [field]: file_url }));
+    try {
+      const result = await uploadFile(file, 'documents');
+      if (result.success) {
+        setFormData(prev => ({ ...prev, [field]: result.url }));
+      } else {
+        throw new Error(result.error || 'Failed to upload file');
+      }
+    } catch (error) {
+      console.error('File upload error:', error);
+      alert(`שגיאה בהעלאת הקובץ: ${error.message || 'נסה שוב מאוחר יותר'}`);
+      throw error;
+    }
   };
 
   const toggleSubject = (subject) => {

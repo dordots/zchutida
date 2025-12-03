@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Mentee } from '@/api/entities';
+import { uploadFile } from '@/firebase/storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,23 +30,29 @@ export default function MenteeProfile() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const loadUser = async () => {
-      const currentUser = await base44.auth.me();
-      setUser(currentUser);
+    // Load user from localStorage instead of base44 auth
+    const userData = localStorage.getItem('zchut_user');
+    if (userData) {
+      const parsed = JSON.parse(userData);
+      const profile = parsed.menteeProfile || parsed.profile;
+      if (profile) {
+        // Create user object from profile
+        const currentUser = {
+          id: profile.id,
+          email: profile.email || '',
+          ...profile
+        };
+        setUser(currentUser);
+      }
       
-      // Check approval status from localStorage
-      const userData = localStorage.getItem('zchut_user');
-      if (userData) {
-        const parsed = JSON.parse(userData);
-        if (parsed.menteeProfile && !parsed.menteeApproved) {
-          setPendingApproval(true);
-          if (parsed.menteeProfile.admin_rejection_reason) {
-            setRejectionReason(parsed.menteeProfile.admin_rejection_reason);
-          }
+      // Check approval status
+      if (parsed.menteeProfile && !parsed.menteeApproved) {
+        setPendingApproval(true);
+        if (parsed.menteeProfile.admin_rejection_reason) {
+          setRejectionReason(parsed.menteeProfile.admin_rejection_reason);
         }
       }
-    };
-    loadUser();
+    }
   }, []);
 
   // Get id_number from localStorage for users who are both mentee and mentor
@@ -68,11 +75,15 @@ export default function MenteeProfile() {
     queryFn: async () => {
       const idNumber = getIdNumber();
       if (idNumber) {
-        const profiles = await base44.entities.Mentee.filter({ id_number: idNumber });
+        const profiles = await Mentee.filter({ id_number: idNumber });
         if (profiles.length > 0) return profiles[0];
       }
       // Fallback to created_by
-      const profiles = await base44.entities.Mentee.filter({ created_by: user.email });
+      if (user.email) {
+        const profiles = await Mentee.filter({ email: user.email });
+        if (profiles.length > 0) return profiles[0];
+      }
+      return null;
       return profiles[0] || null;
     },
     enabled: !!user
@@ -94,9 +105,9 @@ export default function MenteeProfile() {
   const saveMutation = useMutation({
     mutationFn: async (data) => {
       if (menteeProfile) {
-        return await base44.entities.Mentee.update(menteeProfile.id, data);
+        return await Mentee.update(menteeProfile.id, data);
       } else {
-        return await base44.entities.Mentee.create(data);
+        return await Mentee.create(data);
       }
     },
     onSuccess: () => {
@@ -105,8 +116,18 @@ export default function MenteeProfile() {
   });
 
   const handleFileUpload = async (file, field) => {
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setFormData(prev => ({ ...prev, [field]: file_url }));
+    try {
+      const result = await uploadFile(file, 'documents');
+      if (result.success) {
+        setFormData(prev => ({ ...prev, [field]: result.url }));
+      } else {
+        throw new Error(result.error || 'Failed to upload file');
+      }
+    } catch (error) {
+      console.error('File upload error:', error);
+      alert(`שגיאה בהעלאת הקובץ: ${error.message || 'נסה שוב מאוחר יותר'}`);
+      throw error;
+    }
   };
 
   const handleSubmit = async (e) => {

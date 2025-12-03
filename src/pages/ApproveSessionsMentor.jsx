@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Session, Mentee } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ export default function ApproveSessionsMentor() {
   const { data: pendingSessions = [], isLoading } = useQuery({
     queryKey: ['pendingSessions', mentorProfile?.id],
     queryFn: async () => {
-      const sessions = await base44.entities.Session.filter({ 
+      const sessions = await Session.filter({ 
         mentor_id: mentorProfile.id,
         status: 'pending'
       });
@@ -41,13 +41,13 @@ export default function ApproveSessionsMentor() {
 
   const { data: mentees = [] } = useQuery({
     queryKey: ['allMentees'],
-    queryFn: () => base44.entities.Mentee.list(),
+    queryFn: () => Mentee.list(),
     enabled: !!mentorProfile
   });
 
   const approveMutation = useMutation({
     mutationFn: async (sessionId) => {
-      return await base44.entities.Session.update(sessionId, {
+      return await Session.update(sessionId, {
         status: 'approved',
         mentor_approved: true
       });
@@ -59,7 +59,7 @@ export default function ApproveSessionsMentor() {
 
   const rejectMutation = useMutation({
     mutationFn: async ({ sessionId, reason }) => {
-      return await base44.entities.Session.update(sessionId, {
+      return await Session.update(sessionId, {
         status: 'rejected',
         cancelled_by: 'mentor',
         rejection_reason: reason

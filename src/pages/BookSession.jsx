@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Mentor, Session } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
@@ -31,6 +31,7 @@ export default function BookSession() {
   const [bookingEndTime, setBookingEndTime] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [success, setSuccess] = useState(false);
+  const [conflictError, setConflictError] = useState(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -65,7 +66,7 @@ export default function BookSession() {
   const { data: mentors = [], isLoading } = useQuery({
     queryKey: ['availableMentors'],
     queryFn: async () => {
-      return await base44.entities.Mentor.filter({ status: 'approved', available: true, admin_approved: true });
+      return await Mentor.filter({ status: 'approved', available: true, admin_approved: true });
     }
   });
 
@@ -73,35 +74,105 @@ export default function BookSession() {
   const { data: existingSessions = [] } = useQuery({
     queryKey: ['existingSessions'],
     queryFn: async () => {
-      return await base44.entities.Session.filter({ status: 'pending' });
+      return await Session.filter({ status: 'pending' });
     }
   });
 
   const { data: approvedSessions = [] } = useQuery({
     queryKey: ['approvedSessions'],
     queryFn: async () => {
-      return await base44.entities.Session.filter({ status: 'approved' });
+      return await Session.filter({ status: 'approved' });
     }
   });
 
   const allBookedSessions = [...existingSessions, ...approvedSessions];
+  
+  // Get all sessions for the mentee to check conflicts
+  const { data: menteeSessions = [] } = useQuery({
+    queryKey: ['menteeSessions', menteeProfile?.id],
+    queryFn: async () => {
+      if (!menteeProfile?.id) return [];
+      return await Session.filter({ mentee_id: menteeProfile.id });
+    },
+    enabled: !!menteeProfile?.id
+  });
+  
+  // Get all sessions for the selected mentor to check conflicts
+  const { data: mentorSessions = [] } = useQuery({
+    queryKey: ['mentorSessions', selectedMentor?.id],
+    queryFn: async () => {
+      if (!selectedMentor?.id) return [];
+      return await Session.filter({ mentor_id: selectedMentor.id });
+    },
+    enabled: !!selectedMentor?.id
+  });
 
   // Check if a time slot overlaps with existing sessions
-  const isSlotAvailable = (mentorId, date, startTime, endTime) => {
-    return !allBookedSessions.some(session => {
+  const checkTimeOverlap = (start1, end1, start2, end2) => {
+    // Convert time strings to minutes for easier comparison
+    const timeToMinutes = (time) => {
+      const [hours, minutes] = time.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+    
+    const start1Min = timeToMinutes(start1);
+    const end1Min = timeToMinutes(end1);
+    const start2Min = timeToMinutes(start2);
+    const end2Min = timeToMinutes(end2);
+    
+    // Check if there's any overlap
+    return !(end1Min <= start2Min || start1Min >= end2Min);
+  };
+
+  // Check for conflicts and return conflict details
+  const checkConflicts = (mentorId, menteeId, date, startTime, endTime) => {
+    const conflicts = [];
+    
+    // Check mentor conflicts
+    const mentorConflicts = mentorSessions.filter(session => {
+      if (session.status === 'rejected' || session.status === 'cancelled') return false;
       if (session.mentor_id !== mentorId) return false;
       if (session.date !== date) return false;
-      // Check time overlap
-      const sessionStart = session.start_time;
-      const sessionEnd = session.end_time;
-      return !(endTime <= sessionStart || startTime >= sessionEnd);
+      return checkTimeOverlap(startTime, endTime, session.start_time, session.end_time);
     });
+    
+    if (mentorConflicts.length > 0) {
+      const conflict = mentorConflicts[0];
+      conflicts.push({
+        type: 'mentor',
+        message: `החונך כבר יש לו מפגש באותו זמן (${conflict.start_time} - ${conflict.end_time})`
+      });
+    }
+    
+    // Check mentee conflicts
+    const menteeConflicts = menteeSessions.filter(session => {
+      if (session.status === 'rejected' || session.status === 'cancelled') return false;
+      if (session.mentee_id !== menteeId) return false;
+      if (session.date !== date) return false;
+      return checkTimeOverlap(startTime, endTime, session.start_time, session.end_time);
+    });
+    
+    if (menteeConflicts.length > 0) {
+      const conflict = menteeConflicts[0];
+      conflicts.push({
+        type: 'mentee',
+        message: `יש לך כבר מפגש אחר באותו זמן (${conflict.start_time} - ${conflict.end_time})`
+      });
+    }
+    
+    return conflicts;
+  };
+
+  // Check if slot is available (no conflicts)
+  const isSlotAvailable = (mentorId, menteeId, date, startTime, endTime) => {
+    const conflicts = checkConflicts(mentorId, menteeId, date, startTime, endTime);
+    return conflicts.length === 0;
   };
 
   const bookSessionMutation = useMutation({
     mutationFn: async (data) => {
       // Create the session
-      const session = await base44.entities.Session.create(data);
+      const session = await Session.create(data);
       return session;
     },
     onSuccess: () => {
@@ -114,6 +185,22 @@ export default function BookSession() {
 
   const handleBook = () => {
     if (!menteeProfile || !selectedMentor || !selectedSlot || !selectedDate || !bookingStartTime || !bookingEndTime) return;
+
+    // Check for conflicts first
+    const conflicts = checkConflicts(
+      selectedMentor.id,
+      menteeProfile.id,
+      selectedDate,
+      bookingStartTime,
+      bookingEndTime
+    );
+    
+    if (conflicts.length > 0) {
+      setConflictError(conflicts[0].message);
+      return;
+    }
+    
+    setConflictError(null);
 
     const duration = calculateDuration(bookingStartTime, bookingEndTime);
     
@@ -141,6 +228,27 @@ export default function BookSession() {
       mentee_approved: true
     });
   };
+  
+  // Check conflicts whenever time/date changes
+  useEffect(() => {
+    if (selectedMentor && menteeProfile && selectedDate && bookingStartTime && bookingEndTime) {
+      const conflicts = checkConflicts(
+        selectedMentor.id,
+        menteeProfile.id,
+        selectedDate,
+        bookingStartTime,
+        bookingEndTime
+      );
+      
+      if (conflicts.length > 0) {
+        setConflictError(conflicts[0].message);
+      } else {
+        setConflictError(null);
+      }
+    } else {
+      setConflictError(null);
+    }
+  }, [selectedMentor, menteeProfile, selectedDate, bookingStartTime, bookingEndTime, mentorSessions, menteeSessions]);
 
   const calculateDuration = (start, end) => {
     const startParts = start.split(':');
@@ -384,10 +492,12 @@ export default function BookSession() {
                         </div>
                       </div>
                     )}
-                    {bookingStartTime && bookingEndTime && selectedDate && !isSlotAvailable(selectedMentor.id, selectedDate, bookingStartTime, bookingEndTime) && (
-                      <p className="text-sm text-red-600">
-                        ⚠️ השעות האלה כבר תפוסות, בחר שעות אחרות
-                      </p>
+                    {conflictError && (
+                      <Alert className="mt-4 bg-red-50 border-red-200">
+                        <AlertDescription className="text-red-800">
+                          ⚠️ {conflictError}
+                        </AlertDescription>
+                      </Alert>
                     )}
                     {bookingStartTime && bookingEndTime && calculateDuration(bookingStartTime, bookingEndTime) > 0 && (
                       <p className="text-sm text-purple-600">
@@ -446,10 +556,12 @@ export default function BookSession() {
                   ⚠️ השעות חייבות להיות בטווח {selectedSlot.start_time} - {selectedSlot.end_time}
                 </p>
               )}
-              {bookingStartTime && bookingEndTime && selectedDate && isValidTimeRange(bookingStartTime, bookingEndTime) && !isSlotAvailable(selectedMentor.id, selectedDate, bookingStartTime, bookingEndTime) && (
-                <p className="text-sm text-red-600 mt-2">
-                  ⚠️ השעות האלה כבר תפוסות, בחר שעות אחרות
-                </p>
+              {conflictError && (
+                <Alert className="mt-4 bg-red-50 border-red-200">
+                  <AlertDescription className="text-red-800">
+                    ⚠️ {conflictError}
+                  </AlertDescription>
+                </Alert>
               )}
               {bookingStartTime && bookingEndTime && isValidTimeRange(bookingStartTime, bookingEndTime) && (
                 <p className="text-sm text-emerald-600 mt-2">
@@ -519,18 +631,40 @@ export default function BookSession() {
 
         {/* Submit */}
         {selectedMentor && selectedSlot && selectedDate && bookingStartTime && bookingEndTime && selectedSubject && (
-          <Alert className="mb-6 bg-emerald-50 border-emerald-200">
-            <AlertDescription className="text-emerald-800">
-              <strong>סיכום:</strong> מפגש {selectedSubject} עם {selectedMentor.full_name} ביום {moment(selectedDate).format('DD/MM/YYYY')} בין השעות {bookingStartTime} - {bookingEndTime}
-            </AlertDescription>
-          </Alert>
+          <>
+            {conflictError ? (
+              <Alert className="mb-6 bg-red-50 border-red-200">
+                <AlertDescription className="text-red-800">
+                  <strong>⚠️ התנגשות זמנים:</strong> {conflictError}
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert className="mb-6 bg-emerald-50 border-emerald-200">
+                <AlertDescription className="text-emerald-800">
+                  <strong>סיכום:</strong> מפגש {selectedSubject} עם {selectedMentor.full_name} ביום {moment(selectedDate).format('DD/MM/YYYY')} בין השעות {bookingStartTime} - {bookingEndTime}
+                </AlertDescription>
+              </Alert>
+            )}
+          </>
         )}
 
         <div className="flex gap-3">
           <Button
             onClick={handleBook}
-            disabled={!selectedMentor || !selectedSlot || !selectedDate || !bookingStartTime || !bookingEndTime || !selectedSubject || bookSessionMutation.isPending || !isSlotAvailable(selectedMentor?.id, selectedDate, bookingStartTime, bookingEndTime) || !isValidTimeRange(bookingStartTime, bookingEndTime) || !isWithinSlotRange(bookingStartTime, bookingEndTime, selectedSlot)}
-            className="bg-emerald-600 hover:bg-emerald-700"
+            disabled={
+              !selectedMentor || 
+              !selectedSlot || 
+              !selectedDate || 
+              !bookingStartTime || 
+              !bookingEndTime || 
+              !selectedSubject || 
+              bookSessionMutation.isPending || 
+              !!conflictError ||
+              !isSlotAvailable(selectedMentor?.id, menteeProfile?.id, selectedDate, bookingStartTime, bookingEndTime) || 
+              !isValidTimeRange(bookingStartTime, bookingEndTime) || 
+              !isWithinSlotRange(bookingStartTime, bookingEndTime, selectedSlot)
+            }
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {bookSessionMutation.isPending ? 'שומר...' : 'קבע מפגש'}
           </Button>

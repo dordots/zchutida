@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Session, Mentor, Mentee } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -37,9 +37,9 @@ export default function Calendar() {
     queryFn: async () => {
       if (!userProfile) return [];
       if (userType === 'mentee') {
-        return await base44.entities.Session.filter({ mentee_id: userProfile.id });
+        return await Session.filter({ mentee_id: userProfile.id });
       } else {
-        return await base44.entities.Session.filter({ mentor_id: userProfile.id });
+        return await Session.filter({ mentor_id: userProfile.id });
       }
     },
     enabled: !!userProfile
@@ -48,12 +48,12 @@ export default function Calendar() {
   // Get mentors and mentees for display names
   const { data: mentors = [] } = useQuery({
     queryKey: ['mentors'],
-    queryFn: () => base44.entities.Mentor.list()
+    queryFn: () => Mentor.list()
   });
 
   const { data: mentees = [] } = useQuery({
     queryKey: ['mentees'],
-    queryFn: () => base44.entities.Mentee.list()
+    queryFn: () => Mentee.list()
   });
 
   const getMentorName = (mentorId) => mentors.find(m => m.id === mentorId)?.full_name || 'חונך';
@@ -63,7 +63,7 @@ export default function Calendar() {
 
   const cancelSessionMutation = useMutation({
     mutationFn: async (sessionId) => {
-      await base44.entities.Session.update(sessionId, {
+      await Session.update(sessionId, {
         status: 'rejected',
         cancelled_by: userType
       });

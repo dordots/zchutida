@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Mentee, Mentor, Session } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
@@ -43,23 +43,23 @@ export default function AdminDashboard() {
   // Fetch all data
   const { data: mentees = [], isLoading: menteesLoading } = useQuery({
     queryKey: ['allMentees'],
-    queryFn: () => base44.entities.Mentee.list()
+    queryFn: () => Mentee.list()
   });
 
   const { data: mentors = [], isLoading: mentorsLoading } = useQuery({
     queryKey: ['allMentors'],
-    queryFn: () => base44.entities.Mentor.list()
+    queryFn: () => Mentor.list()
   });
 
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
     queryKey: ['allSessions'],
-    queryFn: () => base44.entities.Session.list()
+    queryFn: () => Session.list()
   });
 
   // Mutations
   const approveMenteeMutation = useMutation({
     mutationFn: async ({ menteeId, hours }) => {
-      return await base44.entities.Mentee.update(menteeId, {
+      return await Mentee.update(menteeId, {
         admin_approved: true,
         hours_balance: parseFloat(hours) || 0,
         status: 'admin_approved'
@@ -75,7 +75,7 @@ export default function AdminDashboard() {
 
   const rejectMenteeMutation = useMutation({
     mutationFn: async ({ menteeId, reason }) => {
-      return await base44.entities.Mentee.update(menteeId, {
+      return await Mentee.update(menteeId, {
         admin_approved: false,
         status: 'army_rejected',
         admin_rejection_reason: reason
@@ -91,7 +91,7 @@ export default function AdminDashboard() {
 
   const approveMentorMutation = useMutation({
     mutationFn: async (mentorId) => {
-      return await base44.entities.Mentor.update(mentorId, {
+      return await Mentor.update(mentorId, {
         status: 'approved',
         admin_approved: true,
         available: true
@@ -106,7 +106,7 @@ export default function AdminDashboard() {
 
   const rejectMentorMutation = useMutation({
     mutationFn: async ({ mentorId, reason }) => {
-      return await base44.entities.Mentor.update(mentorId, {
+      return await Mentor.update(mentorId, {
         status: 'suspended',
         admin_approved: false,
         admin_rejection_reason: reason
@@ -122,7 +122,7 @@ export default function AdminDashboard() {
 
   const updateHoursMutation = useMutation({
     mutationFn: async ({ menteeId, hours }) => {
-      return await base44.entities.Mentee.update(menteeId, {
+      return await Mentee.update(menteeId, {
         hours_balance: parseFloat(hours)
       });
     },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Session } from '@/api/entities';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { createPageUrl } from '../utils';
@@ -33,7 +33,7 @@ export default function CombinedDashboard() {
     queryKey: ['cancelledSessionsMentee', menteeProfile?.id],
     queryFn: async () => {
       if (!menteeProfile) return [];
-      return await base44.entities.Session.filter({ 
+      return await Session.filter({ 
         mentee_id: menteeProfile.id, 
         status: 'rejected',
         cancelled_by: 'mentor',
@@ -47,7 +47,7 @@ export default function CombinedDashboard() {
     queryKey: ['cancelledSessionsMentor', mentorProfile?.id],
     queryFn: async () => {
       if (!mentorProfile) return [];
-      return await base44.entities.Session.filter({ 
+      return await Session.filter({ 
         mentor_id: mentorProfile.id, 
         status: 'rejected',
         cancelled_by: 'mentee',
@@ -58,11 +58,11 @@ export default function CombinedDashboard() {
   });
 
   const dismissMenteeNotification = async (sessionId) => {
-    await base44.entities.Session.update(sessionId, { notification_dismissed_by_mentee: true });
+    await Session.update(sessionId, { notification_dismissed_by_mentee: true });
   };
 
   const dismissMentorNotification = async (sessionId) => {
-    await base44.entities.Session.update(sessionId, { notification_dismissed_by_mentor: true });
+    await Session.update(sessionId, { notification_dismissed_by_mentor: true });
   };
 
   if (!userData) return null;

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createPageUrl } from './utils';
+import { createPageUrl } from '../utils';
 import { Button } from '@/components/ui/button';
 import { GraduationCap, User, LogOut, Menu, X, Calendar, CreditCard, CalendarPlus, Home, Clock, Users } from 'lucide-react';
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Mentee, Mentor } from '@/api/entities';
+import { uploadFile } from '@/firebase/storage';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -87,12 +88,19 @@ export default function RegisterForm() {
   const handleFileUpload = async (file, field, isMentor) => {
     setUploadingField(field);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      if (isMentor) {
-        setMentorData(prev => ({ ...prev, [field]: file_url }));
+      const result = await uploadFile(file, 'documents');
+      if (result.success) {
+        if (isMentor) {
+          setMentorData(prev => ({ ...prev, [field]: result.url }));
+        } else {
+          setMenteeData(prev => ({ ...prev, [field]: result.url }));
+        }
       } else {
-        setMenteeData(prev => ({ ...prev, [field]: file_url }));
+        throw new Error(result.error || 'Failed to upload file');
       }
+    } catch (error) {
+      console.error('File upload error:', error);
+      setError('שגיאה בהעלאת הקובץ. נסה שוב.');
     } finally {
       setUploadingField(null);
     }
@@ -122,13 +130,13 @@ export default function RegisterForm() {
           return;
         }
 
-        const existing = await base44.entities.Mentee.filter({ id_number: menteeData.id_number });
+        const existing = await Mentee.filter({ id_number: menteeData.id_number });
         if (existing.length > 0) {
           setError('מספר זהות זה כבר רשום כחניך במערכת');
           return;
         }
 
-        await base44.entities.Mentee.create({
+        await Mentee.create({
           ...menteeData,
           admin_approved: false,
           status: 'pending_admin_approval',
@@ -144,13 +152,13 @@ export default function RegisterForm() {
           return;
         }
 
-        const existing = await base44.entities.Mentor.filter({ id_number: mentorData.id_number });
+        const existing = await Mentor.filter({ id_number: mentorData.id_number });
         if (existing.length > 0) {
           setError('מספר זהות זה כבר רשום כחונך במערכת');
           return;
         }
 
-        await base44.entities.Mentor.create({
+        await Mentor.create({
           ...mentorData,
           hourly_rate: 0, // יקבע על ידי המנהל
           experience_years: parseInt(mentorData.experience_years) || 0,

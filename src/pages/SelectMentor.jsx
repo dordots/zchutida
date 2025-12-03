@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Mentor } from '@/api/entities';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,7 +52,7 @@ export default function SelectMentor() {
   const { data: mentors = [], isLoading } = useQuery({
     queryKey: ['mentors'],
     queryFn: async () => {
-      const allMentors = await base44.entities.Mentor.filter({ 
+      const allMentors = await Mentor.filter({ 
         status: 'approved',
         available: true,
         admin_approved: true

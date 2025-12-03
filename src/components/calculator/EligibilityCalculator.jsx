@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Calculator, CheckCircle2, XCircle, MessageCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '../../utils';
 import { useNavigate } from 'react-router-dom';
 
@@ -22,12 +21,18 @@ export default function EligibilityCalculator() {
   });
   const [result, setResult] = useState(null);
 
-  const handleGetStarted = async () => {
-    const isAuth = await base44.auth.isAuthenticated();
-    if (isAuth) {
+  const handleGetStarted = () => {
+    // Check local authentication instead of base44
+    const userData = localStorage.getItem('zchut_user');
+    if (userData) {
       navigate(createPageUrl('Payment'));
     } else {
-      window.location.href = '/auth/login?next=' + encodeURIComponent(createPageUrl('Payment'));
+      // Navigate to home and scroll to login section
+      navigate(createPageUrl('Home'));
+      setTimeout(() => {
+        const element = document.getElementById('login-section');
+        element?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     }
   };
 

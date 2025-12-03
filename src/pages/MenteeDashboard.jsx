@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Session } from '@/api/entities';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { createPageUrl } from '../utils';
@@ -39,7 +39,7 @@ export default function MenteeDashboard() {
     queryFn: async () => {
       if (!profile) return [];
       // Get rejected sessions by mentor
-      const rejected = await base44.entities.Session.filter({ 
+      const rejected = await Session.filter({ 
         mentee_id: profile.id, 
         status: 'rejected',
         cancelled_by: 'mentor',
@@ -53,7 +53,7 @@ export default function MenteeDashboard() {
   const queryClient = useQuery;
   
   const dismissNotification = async (sessionId) => {
-    await base44.entities.Session.update(sessionId, { notification_dismissed_by_mentee: true });
+    await Session.update(sessionId, { notification_dismissed_by_mentee: true });
   };
 
   const isApproved = profile?.admin_approved;

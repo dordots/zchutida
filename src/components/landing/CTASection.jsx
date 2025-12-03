@@ -4,10 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CheckCircle2, ArrowLeft, MessageCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { base44 } from '@/api/base44Client';
+import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../../utils';
 
 export default function CTASection({ onCTAClick }) {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
@@ -81,7 +82,20 @@ export default function CTASection({ onCTAClick }) {
                 <Button
                   variant="outline"
                   className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-                  onClick={() => base44.auth.redirectToLogin(createPageUrl('Payment'))}
+                  onClick={() => {
+                    // Check if user is logged in locally
+                    const userData = localStorage.getItem('zchut_user');
+                    if (userData) {
+                      navigate(createPageUrl('Payment'));
+                    } else {
+                      // Navigate to home and scroll to login
+                      navigate(createPageUrl('Home'));
+                      setTimeout(() => {
+                        const element = document.getElementById('login-section');
+                        element?.scrollIntoView({ behavior: 'smooth' });
+                      }, 100);
+                    }
+                  }}
                 >
                   כניסה לאזור האישי
                 </Button>

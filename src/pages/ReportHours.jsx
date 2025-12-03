@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Session, Mentee } from '@/api/entities';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,7 +25,7 @@ export default function ReportHours() {
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
     queryKey: ['mentorSessions', mentorProfile?.id],
     queryFn: async () => {
-      return await base44.entities.Session.filter({ mentor_id: mentorProfile.id });
+      return await Session.filter({ mentor_id: mentorProfile.id });
     },
     enabled: !!mentorProfile
   });
@@ -33,14 +33,14 @@ export default function ReportHours() {
   // Get mentees for display names
   const { data: mentees = [] } = useQuery({
     queryKey: ['mentees'],
-    queryFn: () => base44.entities.Mentee.list()
+    queryFn: () => Mentee.list()
   });
 
   // Get pending sessions that need mentor approval
   const { data: pendingApproval = [] } = useQuery({
     queryKey: ['pendingApproval', mentorProfile?.id],
     queryFn: async () => {
-      return await base44.entities.Session.filter({ mentor_id: mentorProfile.id, status: 'pending' });
+      return await Session.filter({ mentor_id: mentorProfile.id, status: 'pending' });
     },
     enabled: !!mentorProfile
   });

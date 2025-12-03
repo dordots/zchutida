@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Mentee, Mentor, Admin } from '@/api/entities';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,9 +22,9 @@ export default function LoginForm({ onClose }) {
 
     try {
       // Check all tables - user can be mentee, mentor, or admin
-      const mentees = await base44.entities.Mentee.filter({ id_number: idNumber });
-      const mentors = await base44.entities.Mentor.filter({ id_number: idNumber });
-      const admins = await base44.entities.Admin.filter({ id_number: idNumber });
+      const mentees = await Mentee.filter({ id_number: idNumber });
+      const mentors = await Mentor.filter({ id_number: idNumber });
+      const admins = await Admin.filter({ id_number: idNumber });
 
       const isMentee = mentees.length > 0;
       const isMentor = mentors.length > 0;

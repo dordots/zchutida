@@ -1,15 +1,5 @@
-import { base44 } from './base44Client';
+// Use Firebase entities instead of base44
+export { Mentee, Mentor, Session, Admin } from './firebaseEntities';
 
-
-export const Mentee = base44.entities.Mentee;
-
-export const Mentor = base44.entities.Mentor;
-
-export const Session = base44.entities.Session;
-
-export const Admin = base44.entities.Admin;
-
-
-
-// auth sdk:
-export const User = base44.auth;
+// Note: User/auth is now handled separately via Firebase Auth
+// (not using base44.auth anymore)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { Mentee } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +11,7 @@ import { CreditCard, CheckCircle2, FileText, Upload, ChevronRight, ChevronLeft }
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import FileUploadField from '../components/profile/FileUploadField';
+import { uploadFile } from '@/firebase/storage';
 
 export default function Payment() {
   const [user, setUser] = useState(null);
@@ -33,16 +34,26 @@ export default function Payment() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const loadUser = async () => {
-      const currentUser = await base44.auth.me();
-      setUser(currentUser);
-      
-      // Pre-fill email from auth
-      if (currentUser?.email) {
-        setPaymentData(prev => ({ ...prev, email: currentUser.email }));
+    // Load user from localStorage instead of base44 auth
+    const userData = localStorage.getItem('zchut_user');
+    if (userData) {
+      const parsed = JSON.parse(userData);
+      const profile = parsed.menteeProfile || parsed.profile;
+      if (profile) {
+        // Create user object from profile
+        const currentUser = {
+          id: profile.id,
+          email: profile.email || '',
+          ...profile
+        };
+        setUser(currentUser);
+        
+        // Pre-fill email from profile
+        if (profile.email) {
+          setPaymentData(prev => ({ ...prev, email: profile.email }));
+        }
       }
-    };
-    loadUser();
+    }
   }, []);
 
   // Get id_number from localStorage for users who are both mentee and mentor
@@ -65,11 +76,14 @@ export default function Payment() {
     queryFn: async () => {
       const idNumber = getIdNumber();
       if (idNumber) {
-        const profiles = await base44.entities.Mentee.filter({ id_number: idNumber });
+        const profiles = await Mentee.filter({ id_number: idNumber });
         if (profiles.length > 0) return profiles[0];
       }
-      // Fallback to created_by
-      const profiles = await base44.entities.Mentee.filter({ created_by: user.email });
+      // Fallback to email if available
+      if (user.email) {
+        const profiles = await Mentee.filter({ email: user.email });
+        if (profiles.length > 0) return profiles[0];
+      }
       return profiles[0] || null;
     },
     enabled: !!user
@@ -105,7 +119,7 @@ export default function Payment() {
       const fakeInvoiceUrl = `https://example.com/invoice_${Date.now()}.pdf`;
       
       if (menteeProfile) {
-        return await base44.entities.Mentee.update(menteeProfile.id, {
+        return await Mentee.update(menteeProfile.id, {
           full_name: data.full_name,
           id_number: data.id_number,
           institution: data.institution,
@@ -116,7 +130,7 @@ export default function Payment() {
           status: 'paid_pending_army_approval'
         });
       } else {
-        return await base44.entities.Mentee.create({
+        return await Mentee.create({
           full_name: data.full_name,
           id_number: data.id_number,
           institution: data.institution,
@@ -138,7 +152,7 @@ export default function Payment() {
 
   const submitArmyApprovalMutation = useMutation({
     mutationFn: async (approvalUrl) => {
-      return await base44.entities.Mentee.update(menteeProfile.id, {
+      return await Mentee.update(menteeProfile.id, {
         army_approval_document_url: approvalUrl,
         army_approval_status: 'approved',
         status: 'army_approved_ready',
@@ -157,8 +171,18 @@ export default function Payment() {
   };
 
   const handleFileUpload = async (file) => {
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setArmyApprovalUrl(file_url);
+    try {
+      const result = await uploadFile(file, 'documents');
+      if (result.success) {
+        setArmyApprovalUrl(result.url);
+      } else {
+        throw new Error(result.error || 'Failed to upload file');
+      }
+    } catch (error) {
+      console.error('File upload error:', error);
+      alert(`שגיאה בהעלאת הקובץ: ${error.message || 'נסה שוב מאוחר יותר'}`);
+      throw error;
+    }
   };
 
   const handleArmyApprovalSubmit = () => {
