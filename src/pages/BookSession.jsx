@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mentor, Session, Mentee } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -379,13 +379,20 @@ export default function BookSession() {
           </CardHeader>
           <CardContent>
             <div className="grid md:grid-cols-2 gap-4">
-              {mentors.filter(m => m.available_slots?.length > 0 && m.id !== mentorProfileId).map(mentor => (
+              {mentors.filter(m => m.id !== mentorProfileId).map(mentor => (
                 <div
                   key={mentor.id}
                   onClick={() => {
                     setSelectedMentor(mentor);
                     setSelectedSlot(null);
                     setSelectedDate('');
+                    // If mentor has no available slots, default to specific date mode
+                    if (!mentor.available_slots || mentor.available_slots.length === 0) {
+                      setSlotType('specific');
+                      setSelectedSlot({ day: 'specific', start_time: '08:00', end_time: '20:00' });
+                    } else {
+                      setSlotType('recurring');
+                    }
                   }}
                   className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
                     selectedMentor?.id === mentor.id
@@ -401,9 +408,12 @@ export default function BookSession() {
                         <User className="w-6 h-6 text-slate-400" />
                       </div>
                     )}
-                    <div>
+                    <div className="flex-1">
                       <div className="font-semibold text-slate-900">{mentor.full_name}</div>
                       <div className="text-sm text-slate-500">{mentor.institution}</div>
+                      {(!mentor.available_slots || mentor.available_slots.length === 0) && (
+                        <div className="text-xs text-amber-600 mt-1">זמין לתאריכים ספציפיים בלבד</div>
+                      )}
                     </div>
                   </div>
                   {mentor.mentoring_subjects?.length > 0 && (
@@ -416,7 +426,7 @@ export default function BookSession() {
                 </div>
               ))}
             </div>
-            {mentors.filter(m => m.available_slots?.length > 0 && m.id !== mentorProfileId).length === 0 && (
+            {mentors.filter(m => m.id !== mentorProfileId).length === 0 && (
               <p className="text-slate-500 text-center py-4">אין חונכים זמינים כרגע</p>
             )}
           </CardContent>
@@ -432,50 +442,60 @@ export default function BookSession() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid md:grid-cols-2 gap-4 mb-6">
-                <div
-                  onClick={() => {
-                    setSlotType('recurring');
-                    setSelectedSlot(null);
-                    setSelectedDate('');
-                    setBookingStartTime('');
-                    setBookingEndTime('');
-                  }}
-                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all text-center ${
-                    slotType === 'recurring'
-                      ? 'border-emerald-500 bg-emerald-50'
-                      : 'border-slate-200 hover:border-emerald-300'
-                  }`}
-                >
-                  <Calendar className="w-8 h-8 mx-auto mb-2 text-emerald-600" />
-                  <div className="font-semibold text-slate-900">לפי ימים קבועים</div>
-                  <div className="text-sm text-slate-500">בחר מהזמינות הקבועה של החונך</div>
+              {selectedMentor.available_slots && selectedMentor.available_slots.length > 0 ? (
+                <div className="grid md:grid-cols-2 gap-4 mb-6">
+                  <div
+                    onClick={() => {
+                      setSlotType('recurring');
+                      setSelectedSlot(null);
+                      setSelectedDate('');
+                      setBookingStartTime('');
+                      setBookingEndTime('');
+                    }}
+                    className={`p-4 border-2 rounded-lg cursor-pointer transition-all text-center ${
+                      slotType === 'recurring'
+                        ? 'border-emerald-500 bg-emerald-50'
+                        : 'border-slate-200 hover:border-emerald-300'
+                    }`}
+                  >
+                    <Calendar className="w-8 h-8 mx-auto mb-2 text-emerald-600" />
+                    <div className="font-semibold text-slate-900">לפי ימים קבועים</div>
+                    <div className="text-sm text-slate-500">בחר מהזמינות הקבועה של החונך</div>
+                  </div>
+                  <div
+                    onClick={() => {
+                      setSlotType('specific');
+                      setSelectedSlot({ day: 'specific', start_time: '08:00', end_time: '20:00' });
+                      setSelectedDate('');
+                      setBookingStartTime('');
+                      setBookingEndTime('');
+                    }}
+                    className={`p-4 border-2 rounded-lg cursor-pointer transition-all text-center ${
+                      slotType === 'specific'
+                        ? 'border-purple-500 bg-purple-50'
+                        : 'border-slate-200 hover:border-purple-300'
+                    }`}
+                  >
+                    <Clock className="w-8 h-8 mx-auto mb-2 text-purple-600" />
+                    <div className="font-semibold text-slate-900">תאריך ספציפי</div>
+                    <div className="text-sm text-slate-500">בחר תאריך ושעה לפי בחירתך</div>
+                  </div>
                 </div>
-                <div
-                  onClick={() => {
-                    setSlotType('specific');
-                    setSelectedSlot({ day: 'specific', start_time: '08:00', end_time: '20:00' });
-                    setSelectedDate('');
-                    setBookingStartTime('');
-                    setBookingEndTime('');
-                  }}
-                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all text-center ${
-                    slotType === 'specific'
-                      ? 'border-purple-500 bg-purple-50'
-                      : 'border-slate-200 hover:border-purple-300'
-                  }`}
-                >
-                  <Clock className="w-8 h-8 mx-auto mb-2 text-purple-600" />
-                  <div className="font-semibold text-slate-900">תאריך ספציפי</div>
-                  <div className="text-sm text-slate-500">בחר תאריך ושעה לפי בחירתך</div>
+              ) : (
+                <div className="mb-6">
+                  <Alert className="bg-amber-50 border-amber-200">
+                    <AlertDescription className="text-amber-800">
+                      החונך לא הגדיר ימים קבועים. תוכל לבחור תאריך ושעה ספציפיים.
+                    </AlertDescription>
+                  </Alert>
                 </div>
-              </div>
+              )}
 
-              {slotType === 'recurring' && (
+              {slotType === 'recurring' && selectedMentor.available_slots && selectedMentor.available_slots.length > 0 && (
                 <>
                   <p className="text-sm text-slate-600 mb-4">בחר את החלון הזמין ואז הגדר את השעות המדויקות</p>
                   <div className="grid md:grid-cols-3 gap-3">
-                    {selectedMentor.available_slots?.map((slot, index) => (
+                    {selectedMentor.available_slots.map((slot, index) => (
                       <div
                         key={index}
                         onClick={() => {

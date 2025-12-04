@@ -155,6 +155,17 @@ export default function MentorProfile() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Check if available_slots is empty
+    if (!formData.available_slots || formData.available_slots.length === 0) {
+      const confirm = window.confirm(
+        'לא הגדרת שעות זמינות. חניכים יוכלו לקבוע מפגשים רק בתאריכים ספציפיים.\n\nהאם אתה בטוח שברצונך להמשיך?'
+      );
+      if (!confirm) {
+        return;
+      }
+    }
+    
     const profileComplete = !!(
       formData.full_name &&
       formData.id_number &&

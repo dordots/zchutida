@@ -50,18 +50,36 @@ export default function Calendar() {
                    (mentorProfile ? 'mentor' : null));
   const userProfile = userType === 'mentor' ? mentorProfile : menteeProfile;
   const isMentorApproved = mentorProfile?.admin_approved === true;
+  
+  // Check if user is both mentor and mentee
+  const isBothMentorAndMentee = mentorProfile && menteeProfile;
 
+  // Load sessions - if user is both mentor and mentee, load all sessions
   const { data: sessions = [] } = useQuery({
-    queryKey: ['sessions', userType, userProfile?.id],
+    queryKey: ['sessions', mentorProfile?.id, menteeProfile?.id],
     queryFn: async () => {
-      if (!userProfile) return [];
-      if (userType === 'mentee') {
-        return await Session.filter({ mentee_id: userProfile.id });
-      } else {
-        return await Session.filter({ mentor_id: userProfile.id });
+      const allSessions = [];
+      
+      // Load sessions as mentee
+      if (menteeProfile) {
+        const menteeSessions = await Session.filter({ mentee_id: menteeProfile.id });
+        allSessions.push(...menteeSessions);
       }
+      
+      // Load sessions as mentor
+      if (mentorProfile) {
+        const mentorSessions = await Session.filter({ mentor_id: mentorProfile.id });
+        allSessions.push(...mentorSessions);
+      }
+      
+      // Remove duplicates (in case a session has both same mentor and mentee - shouldn't happen but just in case)
+      const uniqueSessions = Array.from(
+        new Map(allSessions.map(s => [s.id, s])).values()
+      );
+      
+      return uniqueSessions;
     },
-    enabled: !!userProfile
+    enabled: !!(mentorProfile || menteeProfile)
   });
 
   // Get mentors and mentees for display names
@@ -77,14 +95,36 @@ export default function Calendar() {
 
   const getMentorName = (mentorId) => mentors.find(m => m.id === mentorId)?.full_name || 'חונך';
   const getMenteeName = (menteeId) => mentees.find(m => m.id === menteeId)?.full_name || 'חניך';
+  
+  // Get role in session (mentor or mentee)
+  const getRoleInSession = (session) => {
+    if (menteeProfile && session.mentee_id === menteeProfile.id) {
+      return 'mentee';
+    }
+    if (mentorProfile && session.mentor_id === mentorProfile.id) {
+      return 'mentor';
+    }
+    return userType || 'mentee';
+  };
+  
+  // Get the other person's name in the session
+  const getOtherPersonName = (session) => {
+    const role = getRoleInSession(session);
+    if (role === 'mentee') {
+      return getMentorName(session.mentor_id);
+    } else {
+      return getMenteeName(session.mentee_id);
+    }
+  };
 
   const queryClient = useQueryClient();
 
   const cancelSessionMutation = useMutation({
-    mutationFn: async (sessionId) => {
+    mutationFn: async ({ sessionId, session }) => {
+      const role = getRoleInSession(session);
       await Session.update(sessionId, {
         status: 'rejected',
-        cancelled_by: userType
+        cancelled_by: role
       });
     },
     onSuccess: () => {
@@ -118,8 +158,9 @@ export default function Calendar() {
 
   const days = getDaysInMonth();
 
-  // Check if mentor is approved (if user is mentor)
-  if (userType === 'mentor' && !isMentorApproved) {
+  // Check if mentor is approved (if user is ONLY mentor, not if they're also a mentee)
+  // If user is both mentor and mentee, they can see their mentee sessions even if not approved as mentor
+  if (userType === 'mentor' && !isMentorApproved && !menteeProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
         <Card className="max-w-md w-full">
@@ -225,21 +266,46 @@ export default function Calendar() {
                         <div className={`text-sm font-medium mb-1 ${isToday ? 'text-emerald-600' : isSelected ? 'text-blue-600' : 'text-slate-700'}`}>
                           {day.date()}
                         </div>
-                        {daySessions.map((session, j) => (
-                          <div
-                            key={j}
-                            className={`text-xs rounded px-2 py-1 mb-1 truncate ${
-                              session.status === 'pending' 
-                                ? 'bg-yellow-100 text-yellow-800' 
+                        {daySessions.map((session, j) => {
+                          const role = getRoleInSession(session);
+                          // Different colors for mentee vs mentor sessions (only if user is both)
+                          const getSessionColor = () => {
+                            if (isBothMentorAndMentee) {
+                              if (role === 'mentee') {
+                                // Blue for mentee sessions
+                                return session.status === 'pending' 
+                                  ? 'bg-blue-100 text-blue-800 border-blue-200' 
+                                  : session.status === 'approved'
+                                  ? 'bg-blue-200 text-blue-900 border-blue-300'
+                                  : 'bg-red-100 text-red-800 border-red-200';
+                              } else {
+                                // Green for mentor sessions
+                                return session.status === 'pending' 
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-200' 
+                                  : session.status === 'approved'
+                                  ? 'bg-emerald-200 text-emerald-900 border-emerald-300'
+                                  : 'bg-red-100 text-red-800 border-red-200';
+                              }
+                            } else {
+                              // Original colors if user is only one role
+                              return session.status === 'pending' 
+                                ? 'bg-yellow-100 text-yellow-800 border-yellow-200' 
                                 : session.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            <Clock className="w-3 h-3 inline ml-1" />
-                            {session.duration_hours} שעות - {session.subject || 'מפגש'}
-                          </div>
-                        ))}
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                : 'bg-red-100 text-red-800 border-red-200';
+                            }
+                          };
+                          
+                          return (
+                            <div
+                              key={j}
+                              className={`text-xs rounded px-2 py-1 mb-1 truncate border ${getSessionColor()}`}
+                            >
+                              <Clock className="w-3 h-3 inline ml-1" />
+                              {session.duration_hours} שעות - {session.subject || 'מפגש'}
+                            </div>
+                          );
+                        })}
                       </>
                     )}
                   </div>
@@ -272,15 +338,35 @@ export default function Calendar() {
                       <div key={i} className="p-4 bg-slate-50 rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                              session.status === 'pending' ? 'bg-yellow-100' : 'bg-emerald-100'
-                            }`}>
-                              <User className={`w-5 h-5 ${session.status === 'pending' ? 'text-yellow-600' : 'text-emerald-600'}`} />
-                            </div>
+                            {(() => {
+                              const role = getRoleInSession(session);
+                              let bgColor, textColor;
+                              if (isBothMentorAndMentee) {
+                                if (role === 'mentee') {
+                                  // Blue for mentee sessions
+                                  bgColor = session.status === 'pending' ? 'bg-blue-100' : 'bg-blue-200';
+                                  textColor = session.status === 'pending' ? 'text-blue-600' : 'text-blue-700';
+                                } else {
+                                  // Green for mentor sessions
+                                  bgColor = session.status === 'pending' ? 'bg-emerald-100' : 'bg-emerald-200';
+                                  textColor = session.status === 'pending' ? 'text-emerald-600' : 'text-emerald-700';
+                                }
+                              } else {
+                                bgColor = session.status === 'pending' ? 'bg-yellow-100' : 'bg-emerald-100';
+                                textColor = session.status === 'pending' ? 'text-yellow-600' : 'text-emerald-600';
+                              }
+                              return (
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${bgColor}`}>
+                                  <User className={`w-5 h-5 ${textColor}`} />
+                                </div>
+                              );
+                            })()}
                             <div>
                               <div className="font-medium text-slate-900">{session.subject || 'מפגש חונכות'}</div>
                               <div className="text-sm text-slate-600">
-                                {userType === 'mentee' ? `עם ${getMentorName(session.mentor_id)}` : `עם ${getMenteeName(session.mentee_id)}`}
+                                {getRoleInSession(session) === 'mentee' 
+                                  ? `עם ${getMentorName(session.mentor_id)}${isBothMentorAndMentee ? ' (כחניך)' : ''}` 
+                                  : `עם ${getMenteeName(session.mentee_id)}${isBothMentorAndMentee ? ' (כחונך)' : ''}`}
                               </div>
                             </div>
                           </div>
@@ -303,7 +389,7 @@ export default function Calendar() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => cancelSessionMutation.mutate(session.id)}
+                              onClick={() => cancelSessionMutation.mutate({ sessionId: session.id, session })}
                               disabled={cancelSessionMutation.isPending}
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
                             >
@@ -338,13 +424,38 @@ export default function Calendar() {
                     <div key={i} className="p-4 bg-slate-50 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-                            <User className="w-5 h-5 text-emerald-600" />
-                          </div>
+                          {(() => {
+                            const role = getRoleInSession(session);
+                            const getIconColor = () => {
+                              if (isBothMentorAndMentee) {
+                                if (role === 'mentee') {
+                                  return session.status === 'pending' 
+                                    ? 'bg-blue-100 text-blue-600' 
+                                    : 'bg-blue-200 text-blue-700';
+                                } else {
+                                  return session.status === 'pending' 
+                                    ? 'bg-emerald-100 text-emerald-600' 
+                                    : 'bg-emerald-200 text-emerald-700';
+                                }
+                              } else {
+                                return session.status === 'pending' 
+                                  ? 'bg-yellow-100 text-yellow-600' 
+                                  : 'bg-emerald-100 text-emerald-600';
+                              }
+                            };
+                            const [bgColor, textColor] = getIconColor().split(' ');
+                            return (
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${bgColor}`}>
+                                <User className={`w-5 h-5 ${textColor}`} />
+                              </div>
+                            );
+                          })()}
                           <div>
                             <div className="font-medium text-slate-900">{session.subject || 'מפגש חונכות'}</div>
                             <div className="text-sm text-slate-600">
-                              {userType === 'mentee' ? `עם ${getMentorName(session.mentor_id)}` : `עם ${getMenteeName(session.mentee_id)}`}
+                              {getRoleInSession(session) === 'mentee' 
+                                ? `עם ${getMentorName(session.mentor_id)}${isBothMentorAndMentee ? ' (כחניך)' : ''}` 
+                                : `עם ${getMenteeName(session.mentee_id)}${isBothMentorAndMentee ? ' (כחונך)' : ''}`}
                             </div>
                           </div>
                         </div>

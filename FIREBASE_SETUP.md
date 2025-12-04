@@ -61,3 +61,4 @@ gsutil cors set cors.json gs://zchutyeda.firebasestorage.app
 - **Test mode** הוא רק לפיתוח! לפני production צריך להגדיר כללי אבטחה מתאימים
 - אם אתה משתמש ב-Authentication בעתיד, עדכן את הכללים בהתאם
 
+

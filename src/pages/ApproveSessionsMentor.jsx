@@ -6,7 +6,7 @@ import { createPageUrl } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { CheckCircle2, XCircle, Clock, User, Calendar, Loader2, AlertTriangle, Clock as ClockIcon } from 'lucide-react';
 import moment from 'moment';
@@ -36,6 +36,55 @@ export default function ApproveSessionsMentor() {
 
   const isApproved = mentorProfile?.admin_approved === true;
 
+  // All hooks must be called before any early returns
+  const { data: pendingSessions = [], isLoading } = useQuery({
+    queryKey: ['pendingSessions', mentorProfile?.id],
+    queryFn: async () => {
+      if (!mentorProfile?.id) return [];
+      const sessions = await Session.filter({ 
+        mentor_id: mentorProfile.id,
+        status: 'pending'
+      });
+      return sessions;
+    },
+    enabled: !!mentorProfile?.id && isApproved
+  });
+
+  const { data: mentees = [] } = useQuery({
+    queryKey: ['allMentees'],
+    queryFn: () => Mentee.list(),
+    enabled: !!mentorProfile && isApproved
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (sessionId) => {
+      return await Session.update(sessionId, {
+        status: 'approved',
+        mentor_approved: true
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['pendingSessions']);
+    }
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ sessionId, reason }) => {
+      return await Session.update(sessionId, {
+        status: 'rejected',
+        cancelled_by: 'mentor',
+        rejection_reason: reason
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['pendingSessions']);
+      setRejectDialogOpen(false);
+      setSelectedSession(null);
+      setRejectReason('');
+    }
+  });
+
+  // Early returns after all hooks
   if (!mentorProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
@@ -78,52 +127,6 @@ export default function ApproveSessionsMentor() {
       </div>
     );
   }
-
-  const { data: pendingSessions = [], isLoading } = useQuery({
-    queryKey: ['pendingSessions', mentorProfile?.id],
-    queryFn: async () => {
-      const sessions = await Session.filter({ 
-        mentor_id: mentorProfile.id,
-        status: 'pending'
-      });
-      return sessions;
-    },
-    enabled: !!mentorProfile
-  });
-
-  const { data: mentees = [] } = useQuery({
-    queryKey: ['allMentees'],
-    queryFn: () => Mentee.list(),
-    enabled: !!mentorProfile
-  });
-
-  const approveMutation = useMutation({
-    mutationFn: async (sessionId) => {
-      return await Session.update(sessionId, {
-        status: 'approved',
-        mentor_approved: true
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(['pendingSessions']);
-    }
-  });
-
-  const rejectMutation = useMutation({
-    mutationFn: async ({ sessionId, reason }) => {
-      return await Session.update(sessionId, {
-        status: 'rejected',
-        cancelled_by: 'mentor',
-        rejection_reason: reason
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(['pendingSessions']);
-      setRejectDialogOpen(false);
-      setSelectedSession(null);
-      setRejectReason('');
-    }
-  });
 
   const openRejectDialog = (session) => {
     setSelectedSession(session);
@@ -223,11 +226,11 @@ export default function ApproveSessionsMentor() {
           <DialogContent dir="rtl">
             <DialogHeader>
               <DialogTitle>דחיית מפגש</DialogTitle>
+              <DialogDescription>
+                האם ברצונך להוסיף הודעה לחניך? (אופציונלי)
+              </DialogDescription>
             </DialogHeader>
             <div className="py-4">
-              <p className="text-sm text-slate-600 mb-3">
-                האם ברצונך להוסיף הודעה לחניך? (אופציונלי)
-              </p>
               <Textarea
                 placeholder="לדוגמה: אני לא פנוי באותו יום, אפשר לקבוע ליום אחר..."
                 value={rejectReason}

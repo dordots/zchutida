@@ -88,3 +88,4 @@ service firebase.storage {
 - שמור את ה-config שלך בסוד - אל תעלה אותו ל-GitHub
 - שקול להשתמש ב-environment variables עבור ה-config
 
+

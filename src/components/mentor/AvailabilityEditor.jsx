@@ -43,6 +43,9 @@ export default function AvailabilityEditor({ slots = [], onChange }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-slate-600">הגדר את השעות שבהן אתה זמין לקבל חניכים</p>
+        <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+          💡 מומלץ להגדיר ימים קבועים. אם לא תגדיר, חניכים יוכלו לקבוע מפגשים רק בתאריכים ספציפיים.
+        </p>
 
         {/* Current slots */}
         {slots.length > 0 && (
