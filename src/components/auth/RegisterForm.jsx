@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UserPlus, Loader2, GraduationCap, Users, CheckCircle2, Upload, FileText, User, X } from 'lucide-react';
+import AvailabilityEditor from '@/components/mentor/AvailabilityEditor';
 
 const SUBJECT_OPTIONS = [
   'מתמטיקה', 'פיזיקה', 'אנגלית', 'עברית', 'מדעי המחשב',
@@ -82,7 +83,8 @@ export default function RegisterForm() {
     form_101_url: '',
     commitment_letter_url: '',
     bio: '',
-    experience_years: ''
+    experience_years: '',
+    available_slots: []
   });
 
   const handleFileUpload = async (file, field, isMentor) => {
@@ -380,6 +382,14 @@ export default function RegisterForm() {
                   fileUrl={mentorData.commitment_letter_url}
                   onUpload={(file) => handleFileUpload(file, 'commitment_letter_url', true)}
                   uploading={uploadingField === 'commitment_letter_url'}
+                />
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="font-semibold text-slate-900">שעות זמינות</h3>
+                <AvailabilityEditor
+                  slots={mentorData.available_slots}
+                  onChange={(slots) => setMentorData({ ...mentorData, available_slots: slots })}
                 />
               </div>
             </>
