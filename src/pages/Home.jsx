@@ -11,7 +11,8 @@ import {
   Users,
   ChevronDown,
   MessageCircle,
-  ArrowLeft
+  ArrowLeft,
+  Phone
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import HeroSection from '../components/landing/HeroSection';
@@ -112,6 +113,24 @@ export default function Home() {
                 בדוק <span className="text-emerald-400">עכשיו</span> כמה מגיע לך
               </h2>
               <p className="text-xl text-slate-400">חישוב מדויק תוך דקה</p>
+              
+              {/* Support Contact Button */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.3 }}
+                className="mt-6 flex justify-center"
+              >
+                <Button
+                  onClick={() => window.open('https://wa.me/972523964584', '_blank')}
+                  variant="outline"
+                  className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400"
+                >
+                  <Phone className="w-4 h-4 ml-2" />
+                  מוקד בירור זכאות: 052-396-4584
+                </Button>
+              </motion.div>
             </motion.div>
             
             <motion.div

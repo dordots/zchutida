@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Calculator, CheckCircle2, XCircle, MessageCircle } from 'lucide-react';
+import { Calculator, CheckCircle2, XCircle, MessageCircle, Phone, ExternalLink } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createPageUrl } from '../../utils';
 import { useNavigate } from 'react-router-dom';
@@ -15,9 +15,7 @@ export default function EligibilityCalculator() {
   const [formData, setFormData] = useState({
     year: '',
     reserveDays: '',
-    combatUnit: '',
-    chaimesh: '',
-    tuitionPaid: ''
+    combatUnit: ''
   });
   const [result, setResult] = useState(null);
 
@@ -38,75 +36,75 @@ export default function EligibilityCalculator() {
 
   const calculateEligibility = () => {
     const days = parseInt(formData.reserveDays);
-    const tuition = parseFloat(formData.tuitionPaid);
     const year = formData.year;
     const isCombat = formData.combatUnit === 'yes';
-    const hasChaimesh = formData.chaimesh === 'yes';
 
-    // Check minimum days
-    const minDays = year === 'tashpah' ? 60 : 50;
-    if (days < minDays) {
+    // Check minimum days (5 days minimum for צו 8)
+    if (days < 5) {
       setResult({
         eligible: false,
-        reason: `לצערנו, אינך זכאי. נדרשים לפחות ${minDays} ימי מילואים בשנת ${year === 'tashpah' ? 'תשפ"ד' : 'תשפ"ה'}.`
+        reason: 'לצערנו, אינך זכאי. נדרשים לפחות 5 ימי מילואים בצו 8.'
       });
       return;
     }
 
-    // Calculate eligible amount based on year and unit type
-    let maxAmount;
-    let percentage;
+    // Calculate eligible amount based on days and unit type
+    // תקרות סיוע מעודכנות לפי מספר ימי שמ"פ בצו 8
+    let maxAmount = 0;
+    let category = '';
 
-    if (year === 'tashpah') {
-      // תשפ"ד
+    if (days >= 5 && days <= 10) {
+      // 5-10 ימים בצו 8 - כל היחידות
+      maxAmount = 1000;
+      category = '5-10 ימים בצו 8';
+    } else if (days >= 11 && days <= 20) {
+      // 11-20 ימים בצו 8 - כל היחידות
+      maxAmount = 1500;
+      category = '11-20 ימים בצו 8';
+    } else if (days >= 21 && days <= 99) {
+      // 21-99 ימים
       if (isCombat) {
-        maxAmount = 11653;
-        percentage = 100;
+        // עד 99 ימי שמ"פ מצטברים בצו 8 במערך הלוחם
+        maxAmount = 2000;
+        category = 'עד 99 ימים במערך לוחם';
       } else {
-        maxAmount = 3495;
-        percentage = 30;
+        // משרתי מילואים בשאר היחידות
+        maxAmount = 2000;
+        category = 'יחידה אחרת (21+ ימים)';
       }
-    } else {
-      // תשפ"ה
-      if (hasChaimesh) {
-        // With Chaimesh grant
-        if (isCombat) {
-          maxAmount = 1432; // 10% only
-          percentage = 10;
-        } else {
-          maxAmount = 0; // Not eligible if not combat
-          percentage = 0;
-        }
+    } else if (days >= 100) {
+      // 100 ומעלה ימים
+      if (isCombat) {
+        // 100 ומעלה ימי שמ"פ מצטברים בצו 8 במערך הלוחם
+        maxAmount = 3000;
+        category = '100+ ימים במערך לוחם';
       } else {
-        // Without Chaimesh
-        if (isCombat) {
-          maxAmount = 10149;
-          percentage = 100;
-        } else {
-          maxAmount = 3044;
-          percentage = 30;
-        }
+        // משרתי מילואים בשאר היחידות
+        maxAmount = 2000;
+        category = 'יחידה אחרת (100+ ימים)';
       }
     }
 
     if (maxAmount === 0) {
       setResult({
         eligible: false,
-        reason: 'לא זכאי למלגה זו (רק לוחמים עם חיימ"ש זכאים להחזר של 10%)'
+        reason: 'לצערנו, אינך זכאי לפי התקרות הקיימות.'
       });
       return;
     }
 
-    // Calculate actual amount
-    const calculatedAmount = Math.min((tuition * percentage) / 100, maxAmount);
-    const actualAmount = Math.min(calculatedAmount, tuition);
+    // הפיצוי מחושב באופן יחסי למספר ימי המילואים שבוצעו בפועל
+    // אבל לא יעלה על התקרה שנקבעה
+    const calculatedAmount = maxAmount;
 
     setResult({
       eligible: true,
-      amount: Math.round(actualAmount),
+      amount: calculatedAmount,
       maxPossible: maxAmount,
-      percentage,
-      year: year === 'tashpah' ? 'תשפ"ד' : 'תשפ"ה'
+      category,
+      days,
+      year: year === 'tashpah' ? 'תשפ"ד' : year === 'tashpeh' ? 'תשפ"ה' : 'תשפ"ו',
+      isCombat
     });
   };
 
@@ -114,16 +112,8 @@ export default function EligibilityCalculator() {
     if (step === 1 && formData.year) setStep(2);
     else if (step === 2 && formData.reserveDays) setStep(3);
     else if (step === 3 && formData.combatUnit) {
-      if (formData.year === 'tashpah') {
-        setStep(5); // Skip Chaimesh question for תשפ"ד
-      } else {
-        setStep(4);
-      }
-    }
-    else if (step === 4 && formData.chaimesh) setStep(5);
-    else if (step === 5 && formData.tuitionPaid) {
       calculateEligibility();
-      setStep(6);
+      setStep(4);
     }
   };
 
@@ -132,9 +122,7 @@ export default function EligibilityCalculator() {
     setFormData({
       year: '',
       reserveDays: '',
-      combatUnit: '',
-      chaimesh: '',
-      tuitionPaid: ''
+      combatUnit: ''
     });
     setResult(null);
   };
@@ -148,16 +136,16 @@ export default function EligibilityCalculator() {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-6">
-        {step !== 6 && (
+        {step !== 4 && (
           <div className="mb-6">
             <div className="flex justify-between items-center text-sm text-slate-600 mb-2">
-              <span>שאלה {step} מתוך 5</span>
-              <span>{Math.round((step / 5) * 100)}%</span>
+              <span>שאלה {step} מתוך 3</span>
+              <span>{Math.round((step / 3) * 100)}%</span>
             </div>
             <div className="w-full bg-slate-200 rounded-full h-2">
               <div
                 className="bg-gradient-to-l from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${(step / 5) * 100}%` }}
+                style={{ width: `${(step / 3) * 100}%` }}
               />
             </div>
           </div>
@@ -182,6 +170,13 @@ export default function EligibilityCalculator() {
                   <div className="text-sm text-slate-600">שירתי בין 27.10.2024 - 30.09.2025</div>
                 </Label>
               </div>
+              <div className="flex items-center space-x-2 space-x-reverse border rounded-lg p-4 hover:bg-slate-50 cursor-pointer">
+                <RadioGroupItem value="tashpav" id="tashpav" />
+                <Label htmlFor="tashpav" className="cursor-pointer flex-1">
+                  <div className="font-semibold">תשפ"ו (2025-2026)</div>
+                  <div className="text-sm text-slate-600">שירתי בשנת תשפ"ו</div>
+                </Label>
+              </div>
             </RadioGroup>
           </div>
         )}
@@ -189,9 +184,9 @@ export default function EligibilityCalculator() {
         {/* Step 2: Reserve Days */}
         {step === 2 && (
           <div className="space-y-4">
-            <Label className="text-lg font-semibold">כמה ימי מילואים שירתת?</Label>
+            <Label className="text-lg font-semibold">כמה ימי מילואים שירתת בצו 8?</Label>
             <p className="text-sm text-slate-600">
-              {formData.year === 'tashpah' ? 'נדרשים לפחות 60 ימים' : 'נדרשים לפחות 50 ימים'}
+              הזן את מספר ימי המילואים שביצעת בצו 8 (שמ"פ מצטברים)
             </p>
             <Input
               type="number"
@@ -199,6 +194,7 @@ export default function EligibilityCalculator() {
               value={formData.reserveDays}
               onChange={(e) => setFormData({ ...formData, reserveDays: e.target.value })}
               className="text-lg"
+              min="5"
             />
           </div>
         )}
@@ -225,45 +221,8 @@ export default function EligibilityCalculator() {
           </div>
         )}
 
-        {/* Step 4: Chaimesh (only for תשפ"ה) */}
-        {step === 4 && formData.year === 'tashpeh' && (
-          <div className="space-y-4">
-            <Label className="text-lg font-semibold">האם קיבלת מלגת חיימ"ש השנה?</Label>
-            <p className="text-sm text-slate-600">מלגת טכנאים והנדסאים מקרן חיימ"ש</p>
-            <RadioGroup value={formData.chaimesh} onValueChange={(val) => setFormData({ ...formData, chaimesh: val })}>
-              <div className="flex items-center space-x-2 space-x-reverse border rounded-lg p-4 hover:bg-slate-50 cursor-pointer">
-                <RadioGroupItem value="yes" id="chaimesh-yes" />
-                <Label htmlFor="chaimesh-yes" className="cursor-pointer flex-1">
-                  כן, קיבלתי מלגת חיימ"ש
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2 space-x-reverse border rounded-lg p-4 hover:bg-slate-50 cursor-pointer">
-                <RadioGroupItem value="no" id="chaimesh-no" />
-                <Label htmlFor="chaimesh-no" className="cursor-pointer flex-1">
-                  לא קיבלתי
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-        )}
-
-        {/* Step 5: Tuition Paid */}
-        {step === 5 && (
-          <div className="space-y-4">
-            <Label className="text-lg font-semibold">כמה שילמת שכר לימוד השנה?</Label>
-            <p className="text-sm text-slate-600">הזן את הסכום המלא ששילמת (בשקלים)</p>
-            <Input
-              type="number"
-              placeholder="למשל: 12000"
-              value={formData.tuitionPaid}
-              onChange={(e) => setFormData({ ...formData, tuitionPaid: e.target.value })}
-              className="text-lg"
-            />
-          </div>
-        )}
-
-        {/* Step 6: Result */}
-        {step === 6 && result && (
+        {/* Step 4: Result */}
+        {step === 4 && result && (
           <div className="space-y-6">
             {result.eligible ? (
               <>
@@ -279,8 +238,14 @@ export default function EligibilityCalculator() {
                   <div className="text-5xl font-bold text-emerald-600 mb-2">
                     ₪{result.amount.toLocaleString()}
                   </div>
-                  <div className="text-sm text-slate-600">
-                    ({result.percentage}% משכר הלימוד, עד {result.maxPossible.toLocaleString()} ₪)
+                  <div className="text-sm text-slate-600 space-y-1 mt-4">
+                    <div><strong>תקרה:</strong> עד {result.maxPossible.toLocaleString()} ₪</div>
+                    <div><strong>קטגוריה:</strong> {result.category}</div>
+                    <div><strong>מספר ימים:</strong> {result.days} ימי מילואים בצו 8</div>
+                    <div><strong>שנת לימודים:</strong> {result.year}</div>
+                  </div>
+                  <div className="mt-4 text-xs text-slate-500 bg-white/50 rounded-lg p-2">
+                    הפיצוי מחושב באופן יחסי למספר ימי המילואים שבוצעו בפועל, אך לא יעלה על התקרה שנקבעה למערך
                   </div>
                 </div>
 
@@ -303,6 +268,24 @@ export default function EligibilityCalculator() {
                   </Button>
                   
                   <Button
+                    onClick={() => window.open('https://mushlam-frontend.wiz.digital.idf.il/m/v2fnx2a8lp', '_blank')}
+                    variant="outline"
+                    className="w-full border-blue-500/30 text-blue-600 hover:bg-blue-50 py-6 text-lg"
+                  >
+                    <ExternalLink className="w-5 h-5 ml-2" />
+                    הגשת בקשה להחזר מקרן הסיוע
+                  </Button>
+
+                  <Button
+                    onClick={() => window.open('https://wa.me/972523964584', '_blank')}
+                    variant="outline"
+                    className="w-full border-emerald-500/30 text-emerald-600 hover:bg-emerald-50 py-6 text-lg"
+                  >
+                    <Phone className="w-5 h-5 ml-2" />
+                    מוקד בירור זכאות: 052-396-4584
+                  </Button>
+                  
+                  <Button
                     onClick={() => window.open('https://wa.me/972528126679', '_blank')}
                     variant="outline"
                     className="w-full border-emerald-500/30 text-emerald-600 hover:bg-emerald-50 py-6 text-lg"
@@ -321,10 +304,28 @@ export default function EligibilityCalculator() {
                   </AlertDescription>
                 </Alert>
 
-                <div className="bg-slate-50 rounded-lg p-4">
+                <div className="bg-slate-50 rounded-lg p-4 space-y-3">
                   <p className="text-sm text-slate-700">
                     אם אתה חושב שיש טעות או שיש לך שאלות, אנחנו כאן לעזור!
                   </p>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      onClick={() => window.open('https://mushlam-frontend.wiz.digital.idf.il/m/v2fnx2a8lp', '_blank')}
+                      variant="outline"
+                      className="w-full border-blue-500/30 text-blue-600 hover:bg-blue-50"
+                    >
+                      <ExternalLink className="w-4 h-4 ml-2" />
+                      הגשת בקשה להחזר מקרן הסיוע
+                    </Button>
+                    <Button
+                      onClick={() => window.open('https://wa.me/972523964584', '_blank')}
+                      variant="outline"
+                      className="w-full border-emerald-500/30 text-emerald-600 hover:bg-emerald-50"
+                    >
+                      <Phone className="w-4 h-4 ml-2" />
+                      מוקד בירור זכאות: 052-396-4584
+                    </Button>
+                  </div>
                 </div>
               </>
             )}
@@ -340,16 +341,14 @@ export default function EligibilityCalculator() {
         )}
 
         {/* Navigation Buttons */}
-        {step > 0 && step < 6 && (
+        {step > 0 && step < 4 && (
           <div className="flex flex-row-reverse gap-3 mt-6">
             <Button
               onClick={handleNext}
               disabled={
                 (step === 1 && !formData.year) ||
                 (step === 2 && !formData.reserveDays) ||
-                (step === 3 && !formData.combatUnit) ||
-                (step === 4 && !formData.chaimesh) ||
-                (step === 5 && !formData.tuitionPaid)
+                (step === 3 && !formData.combatUnit)
               }
               className="flex-1 bg-emerald-600 hover:bg-emerald-700"
             >
