@@ -89,3 +89,4 @@ service firebase.storage {
 - שקול להשתמש ב-environment variables עבור ה-config
 
 
+

@@ -88,3 +88,4 @@ npm run deploy:firestore
   - ודא ש-Firestore rules מאפשרים גישה
 
 
+

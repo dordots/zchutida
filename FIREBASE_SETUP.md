@@ -62,3 +62,4 @@ gsutil cors set cors.json gs://zchutyeda.firebasestorage.app
 - אם אתה משתמש ב-Authentication בעתיד, עדכן את הכללים בהתאם
 
 
+
